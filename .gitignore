@@ -1,0 +1,17 @@
+# Build artifacts
+binaries/
+local-build/
+test-build/
+.ccache/
+
+# Source clones
+llama.cpp/
+
+# Tarballs (released via GitHub, not committed)
+*.tar.gz
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

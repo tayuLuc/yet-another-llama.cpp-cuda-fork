@@ -1,0 +1,26 @@
+services:
+  llama-multifork:
+    build:
+      context: .
+      args:
+        REPO: tayuLuc/yet-another-llama.cpp-cuda-fork
+        RELEASE: cuda-13.2-build-20260718
+    image: llama-multifork:latest
+    container_name: llama-multifork
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models:ro
+      - ./llama-swap/config.yaml:/etc/llama-swap/config.yaml:ro
+    # GPU access for CUDA. Requires nvidia-container-toolkit on the host.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      # llama-swap picks the binary per-model; this is the fallback default.
+      - LLAMA_CPP_BINARY=/opt/llama/vanilla/llama-server

@@ -1,0 +1,40 @@
+{
+  "cuda_version": "13.2.0",
+  "cuda_version_short": "13.2",
+  "cuda_tag": "13.2.0-cudnn-devel-ubuntu24.04",
+  "architectures": "75;80;86;89;90;100;120",
+  "forks": [
+    {
+      "name": "vanilla",
+      "repo": "ggml-org/llama.cpp",
+      "branch": null,
+      "track": "release",
+      "subdir": "vanilla",
+      "note": "Upstream ggml-org/llama.cpp. Detected by latest release tag (bXXXX)."
+    },
+    {
+      "name": "turboquant",
+      "repo": "TheTom/llama-cpp-turboquant",
+      "branch": "feature/turboquant-kv-cache",
+      "track": "branch",
+      "subdir": "turboquant",
+      "note": "TurboQuant+ KV/weight quantization. Detected by branch HEAD commit."
+    },
+    {
+      "name": "atomic",
+      "repo": "AtomicBot-ai/atomic-llama-cpp-turboquant",
+      "branch": "feature/turboquant-kv-cache",
+      "track": "branch",
+      "subdir": "atomic",
+      "note": "Fork of TheTom + Gemma4 MTP and Qwen3.6 NextN speculative decoding. Detected by branch HEAD commit."
+    },
+    {
+      "name": "prism",
+      "repo": "PrismML-Eng/llama.cpp",
+      "branch": "prism",
+      "track": "branch",
+      "subdir": "prism",
+      "note": "Adds Q2_0 ternary quantization (Bonsai models). Detected by branch HEAD commit."
+    }
+  ]
+}
