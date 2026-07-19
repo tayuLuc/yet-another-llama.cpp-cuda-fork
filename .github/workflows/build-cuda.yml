@@ -123,6 +123,8 @@ jobs:
     needs: check-forks
     if: needs.check-forks.outputs.matrix != '{"include":[]}'
     runs-on: ubuntu-latest   # amd64 only (RTX 5090 host)
+    permissions:
+      contents: write   # needed to publish per-fork releases via gh
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.check-forks.outputs.matrix) }}
