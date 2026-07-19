@@ -132,6 +132,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # Skip the build entirely if a release with this exact fork+sha tag
+      # already exists — no point burning 40-60 min rebuilding identical binaries.
+      - name: Check if release already exists
+        id: chk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA12="${{ matrix.ref }}"
+          SHA12="${SHA12:0:12}"
+          if [ "${{ matrix.mode }}" = "stable" ]; then
+            TAG="${{ matrix.name }}-${SHA12}"
+          else
+            TAG="${{ matrix.name }}-nightly-${SHA12}"
+          fi
+          echo "Checking for existing release: $TAG"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping build."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Maximize build space
         run: |
           echo "=== Initial Disk Space ==="
@@ -155,6 +177,7 @@ jobs:
             ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.mode }}-
 
       - name: Build ${{ matrix.name }} (${{ matrix.mode }}) with CUDA
+        if: steps.chk.outputs.skip != 'true'
         env:
           CUDA_TAG: '13.2.0-cudnn-devel-ubuntu24.04'
           ARCHS: '75;80;86;89;90;100;120'
@@ -186,12 +209,14 @@ jobs:
           df -h
 
       - name: Create tarball
+        if: steps.chk.outputs.skip != 'true'
         run: |
           cd binaries
           tar -czf llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64.tar.gz ${{ matrix.subdir }}
           ls -lh *.tar.gz
 
       - name: Upload artifact
+        if: steps.chk.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64
@@ -216,7 +241,7 @@ jobs:
       # Publish THIS fork's release immediately on success — independent of other
       # matrix jobs, so a failure elsewhere doesn't block or skip this publish.
       - name: Publish per-fork release
-        if: success()
+        if: success() && steps.chk.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
