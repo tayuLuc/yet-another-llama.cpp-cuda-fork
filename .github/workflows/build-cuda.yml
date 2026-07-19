@@ -224,10 +224,10 @@ jobs:
               ccache -s
 
               cd /workspace
-              mkdir -p binaries/cuda-13.2/\${SUBDIR}
+              mkdir -p binaries/\${SUBDIR}
               for b in llama-server llama-cli llama-bench; do
                 if [ -x "src/build/bin/\$b" ]; then
-                  cp -a "src/build/bin/\$b" binaries/cuda-13.2/\${SUBDIR}/
+                  cp -a "src/build/bin/\$b" binaries/\${SUBDIR}/
                 else
                   echo "WARNING: \$b not built, skipping"
                 fi
@@ -235,19 +235,19 @@ jobs:
 
               # Bundle CUDA runtime so users don't need the full toolkit installed
               CUDA_LIB=/usr/local/cuda/targets/x86_64-linux/lib
-              cp -a \${CUDA_LIB}/libcudart.so* binaries/cuda-13.2/\${SUBDIR}/
-              cp -a \${CUDA_LIB}/libcublas.so* binaries/cuda-13.2/\${SUBDIR}/
-              cp -a \${CUDA_LIB}/libcublasLt.so* binaries/cuda-13.2/\${SUBDIR}/
+              cp -a \${CUDA_LIB}/libcudart.so* binaries/\${SUBDIR}/
+              cp -a \${CUDA_LIB}/libcublas.so* binaries/\${SUBDIR}/
+              cp -a \${CUDA_LIB}/libcublasLt.so* binaries/\${SUBDIR}/
 
-              find binaries/cuda-13.2/\${SUBDIR}/ -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
+              find binaries/\${SUBDIR}/ -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
-              echo 'fork: \${REPO} (\${BRANCH:-release})' > binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
-              echo 'mode: \${MODE}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
-              echo 'ref: \${REF}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
-              echo 'release-tag: \${RELTAG}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
-              echo 'CUDA version: 13.2.0' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
-              echo 'Architectures: ${{ env.ARCHS }}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
-              echo 'Build date: '\$(date -u +%Y-%m-%d) >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
+              echo 'fork: \${REPO} (\${BRANCH:-release})' > binaries/\${SUBDIR}/VERSION.txt
+              echo 'mode: \${MODE}' >> binaries/\${SUBDIR}/VERSION.txt
+              echo 'ref: \${REF}' >> binaries/\${SUBDIR}/VERSION.txt
+              echo 'release-tag: \${RELTAG}' >> binaries/\${SUBDIR}/VERSION.txt
+              echo 'CUDA version: 13.2.0' >> binaries/\${SUBDIR}/VERSION.txt
+              echo 'Architectures: ${{ env.ARCHS }}' >> binaries/\${SUBDIR}/VERSION.txt
+              echo 'Build date: '\$(date -u +%Y-%m-%d) >> binaries/\${SUBDIR}/VERSION.txt
 
               ls -lh binaries/cuda-13.2/\${SUBDIR}/
               rm -rf src
@@ -260,7 +260,7 @@ jobs:
       - name: Create tarball
         run: |
           cd binaries
-          tar -czf llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64.tar.gz cuda-13.2
+          tar -czf llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64.tar.gz ${{ matrix.subdir }}
           ls -lh *.tar.gz
 
       - name: Upload artifact
@@ -297,11 +297,11 @@ jobs:
           mode=$(echo "$base" | grep -oE 'stable|nightly' | head -1)
           name=$(echo "$base" | sed -E "s/^llama\.cpp-cuda-13\.2-//; s/-amd64\$//; s/-${mode}\$//")
           if [ "$mode" = "stable" ]; then
-            reltag=$(tar -xzOf "$f" cuda-13.2/*/VERSION.txt 2>/dev/null | awk -F': ' '/release-tag/{print $2}')
+            reltag=$(tar -xzOf "$f" ${name}/VERSION.txt 2>/dev/null | awk -F': ' '/release-tag/{print $2}')
             tag="${name}-${reltag}"
             prerelease="false"
           else
-            sha=$(tar -xzOf "$f" cuda-13.2/*/VERSION.txt 2>/dev/null | awk -F': ' '/ref/{print $2}')
+            sha=$(tar -xzOf "$f" ${name}/VERSION.txt 2>/dev/null | awk -F': ' '/ref/{print $2}')
             tag="${name}-nightly-${sha:0:12}"
             prerelease="true"
           fi
