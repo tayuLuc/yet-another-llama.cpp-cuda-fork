@@ -206,7 +206,7 @@ jobs:
                 -DCMAKE_C_COMPILER_LAUNCHER=ccache \
                 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
                 -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
-                -DCMAKE_CUDA_ARCHITECTURES='\${ARCHS}' \
+                -DCMAKE_CUDA_ARCHITECTURES='${{ env.ARCHS }}' \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DBUILD_SHARED_LIBS=ON \
                 -DGGML_NATIVE=OFF \
@@ -237,7 +237,7 @@ jobs:
               echo 'ref: \${REF}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
               echo 'release-tag: \${RELTAG}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
               echo 'CUDA version: 13.2.0' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
-              echo 'Architectures: \${ARCHS}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
+              echo 'Architectures: ${{ env.ARCHS }}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
               echo 'Build date: '\$(date -u +%Y-%m-%d) >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
 
               ls -lh binaries/cuda-13.2/\${SUBDIR}/
