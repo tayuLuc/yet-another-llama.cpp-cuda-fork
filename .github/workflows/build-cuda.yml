@@ -224,12 +224,11 @@ jobs:
           base=$(basename "$f" .tar.gz)   # llama.cpp-cuda-13.2-<name>-<mode>-amd64
           mode=$(echo "$base" | grep -oE 'stable|nightly' | head -1)
           name=$(echo "$base" | sed -E "s/^llama\.cpp-cuda-13\.2-//; s/-amd64\$//; s/-${mode}\$//")
+          sha=$(tar -xzOf "$f" ${name}/VERSION.txt 2>/dev/null | awk -F': ' '/ref/{print $2}')
           if [ "$mode" = "stable" ]; then
-            reltag=$(tar -xzOf "$f" ${name}/VERSION.txt 2>/dev/null | awk -F': ' '/release-tag/{print $2}')
-            tag="${name}-${reltag}"
+            tag="${name}-${sha:0:12}"
             prerelease="false"
           else
-            sha=$(tar -xzOf "$f" ${name}/VERSION.txt 2>/dev/null | awk -F': ' '/ref/{print $2}')
             tag="${name}-nightly-${sha:0:12}"
             prerelease="true"
           fi
