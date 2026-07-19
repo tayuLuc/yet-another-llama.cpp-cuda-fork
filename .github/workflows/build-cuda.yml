@@ -243,7 +243,7 @@ jobs:
   # if: always() so it runs even if some builds failed; guarded below so it
   # only fires when at least one release was actually published today.
   trigger-swap:
-    needs: [build]
+    needs: [build, check-forks]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -252,17 +252,19 @@ jobs:
       - name: Trigger image repo build
         env:
           GH_TOKEN: ${{ secrets.IMAGE_REPO_TOKEN }}
+          MATRIX_JSON: ${{ needs.check-forks.outputs.matrix }}
         run: |
           TODAY=$(date -u +%Y-%m-%d)
-          # Count releases published by THIS run today; skip if none succeeded.
+          # Count releases published TODAY via JSON (reliable column parsing).
           COUNT=$(gh release list --repo "${{ github.repository }}" --limit 100 \
-            | awk -F'\t' -v d="$TODAY" '$3 ~ d {c++} END{print c+0}')
-          if [ "$COUNT" -eq 0 ]; then
+            --json publishedAt \
+            | jq --arg d "$TODAY" '[.[] | select(.publishedAt | startswith($d))] | length')
+          if [ "${COUNT:-0}" -eq 0 ]; then
             echo "No successful releases today — skipping image repo trigger."
             exit 0
           fi
-          MATRIX='${{ needs.check-forks.outputs.matrix }}'
-          if echo "$MATRIX" | grep -q '"mode":"nightly"'; then
+          # Pick mode: nightly if any matrix item is nightly, else stable.
+          if echo "$MATRIX_JSON" | jq -e '.include | any(.mode == "nightly")' >/dev/null 2>&1; then
             IMG_MODE=nightly
           else
             IMG_MODE=stable
