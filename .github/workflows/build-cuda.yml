@@ -197,7 +197,6 @@ jobs:
               fi
               cd src
 
-              export LIBRARY_PATH=\"/usr/local/cuda/lib64/stubs\${LIBRARY_PATH:+:\$LIBRARY_PATH}\"
               ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
 
               cmake -B build -S . \
@@ -228,8 +227,6 @@ jobs:
               for b in llama-server llama-cli llama-bench; do
                 if [ -x "src/build/bin/\$b" ]; then
                   cp -a "src/build/bin/\$b" binaries/\${SUBDIR}/
-                else
-                  echo "WARNING: \$b not built, skipping"
                 fi
               done
 
@@ -241,15 +238,15 @@ jobs:
 
               find binaries/\${SUBDIR}/ -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
-              echo 'fork: \${REPO} (\${BRANCH:-release})' > binaries/\${SUBDIR}/VERSION.txt
-              echo 'mode: \${MODE}' >> binaries/\${SUBDIR}/VERSION.txt
-              echo 'ref: \${REF}' >> binaries/\${SUBDIR}/VERSION.txt
-              echo 'release-tag: \${RELTAG}' >> binaries/\${SUBDIR}/VERSION.txt
-              echo 'CUDA version: 13.2.0' >> binaries/\${SUBDIR}/VERSION.txt
-              echo 'Architectures: ${{ env.ARCHS }}' >> binaries/\${SUBDIR}/VERSION.txt
-              echo 'Build date: '\$(date -u +%Y-%m-%d) >> binaries/\${SUBDIR}/VERSION.txt
+              echo "fork: \${REPO} (\${BRANCH:-release})" > binaries/\${SUBDIR}/VERSION.txt
+              echo "mode: \${MODE}" >> binaries/\${SUBDIR}/VERSION.txt
+              echo "ref: \${REF}" >> binaries/\${SUBDIR}/VERSION.txt
+              echo "release-tag: \${RELTAG}" >> binaries/\${SUBDIR}/VERSION.txt
+              echo "CUDA version: 13.2.0" >> binaries/\${SUBDIR}/VERSION.txt
+              echo "Architectures: ${{ env.ARCHS }}" >> binaries/\${SUBDIR}/VERSION.txt
+              echo "Build date: \$(date -u +%Y-%m-%d)" >> binaries/\${SUBDIR}/VERSION.txt
 
-              ls -lh binaries/cuda-13.2/\${SUBDIR}/
+              ls -lh binaries/\${SUBDIR}/
               rm -rf src
             "
 
