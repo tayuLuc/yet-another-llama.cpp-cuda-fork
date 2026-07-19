@@ -225,7 +225,13 @@ jobs:
 
               cd /workspace
               mkdir -p binaries/cuda-13.2/\${SUBDIR}
-              cp -r src/build/bin/* binaries/cuda-13.2/\${SUBDIR}/
+              for b in llama-server llama-cli llama-bench; do
+                if [ -x "src/build/bin/\$b" ]; then
+                  cp -a "src/build/bin/\$b" binaries/cuda-13.2/\${SUBDIR}/
+                else
+                  echo "WARNING: \$b not built, skipping"
+                fi
+              done
 
               # Bundle CUDA runtime so users don't need the full toolkit installed
               CUDA_LIB=/usr/local/cuda/targets/x86_64-linux/lib
