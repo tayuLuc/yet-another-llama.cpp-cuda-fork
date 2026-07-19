@@ -3,6 +3,14 @@
 # binaries (llama-server, llama-cli, llama-bench) + CUDA runtime libs.
 set -e
 
+apt-get update -qq
+apt-get install -y --no-install-recommends git cmake ninja-build build-essential libssl-dev ca-certificates ccache lld
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+
+ccache -M 3G
+ccache -z
+
 cd /workspace
 
 if [ -n "$BRANCH" ]; then
