@@ -35,12 +35,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Restore last-built refs from Actions cache (one key per fork).
+      # Cache TTL is set in repo Settings > Actions > General > Cache
+      # (public repos cap at 7 days; self-hosted/paid can raise it).
+      - name: Restore last-built refs (cache)
+        id: restore-refs
+        uses: actions/cache@v4
+        with:
+          path: .cache-refs
+          key: fork-refs-v1-${{ github.run_id }}
+          restore-keys: |
+            fork-refs-v1-
+
       - name: Plan which forks changed
         id: plan
         run: |
           FORCE="${{ github.event.inputs.force_build }}"
-          # state.json holds last-built ref per fork; default empty.
-          STATE=$(cat state.json 2>/dev/null || echo '{}')
 
           COUNT=$(jq '.forks | length' forks.json)
           MATRIX_ITEMS="[]"
@@ -59,7 +69,8 @@ jobs:
               REF_TYPE="commit"
             fi
 
-            LAST=$(echo "$STATE" | jq -r --arg n "$NAME" '.[$n] // ""')
+            # Last-built ref lives in .cache-refs/<name>.txt (restored above).
+            LAST=$(cat ".cache-refs/${NAME}.txt" 2>/dev/null || echo "")
             echo "Fork $NAME: track=$TRACK ref=$REF last=$LAST"
             if [ "$FORCE" = "true" ] || [ "$REF" != "$LAST" ]; then
               echo "  -> changed, will build"
@@ -206,15 +217,20 @@ jobs:
           path: binaries/*.tar.gz
           retention-days: 1
 
-      - name: Record built ref into state.json
+      - name: Write built ref
         run: |
-          STATE=$(cat state.json 2>/dev/null || echo '{}')
-          echo "$STATE" | jq --arg n "${{ matrix.name }}" --arg r "${{ matrix.ref }}" '.[$n]=$r' > state.json
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state.json
-          git commit -m "ci: record ${{ matrix.name }} ref ${{ matrix.ref }}" || echo "no change"
-          git push || echo "push failed (likely concurrent run)"
+          mkdir -p .cache-refs
+          echo "${{ matrix.ref }}" > ".cache-refs/${{ matrix.name }}.txt"
+
+      # Save all fork refs; check-forks restores via restore-keys "fork-refs-v1-".
+      - name: Save built refs to cache
+        uses: actions/cache@v4
+        with:
+          path: .cache-refs
+          key: fork-refs-v1-${{ github.run_id }}-${{ matrix.name }}
+          restore-keys: |
+            fork-refs-v1-
+          save-always: true
 
   release:
     needs: [check-forks, build]
