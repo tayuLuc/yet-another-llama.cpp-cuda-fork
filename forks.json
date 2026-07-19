@@ -7,34 +7,34 @@
     {
       "name": "vanilla",
       "repo": "ggml-org/llama.cpp",
-      "branch": null,
+      "branch": "master",
       "track": "release",
       "subdir": "vanilla",
-      "note": "Upstream ggml-org/llama.cpp. Detected by latest release tag (bXXXX)."
+      "note": "Upstream ggml-org/llama.cpp. Stable = latest release tag (bXXXX); nightly = master HEAD."
     },
     {
       "name": "turboquant",
       "repo": "TheTom/llama-cpp-turboquant",
       "branch": "feature/turboquant-kv-cache",
-      "track": "branch",
+      "track": "release",
       "subdir": "turboquant",
-      "note": "TurboQuant+ KV/weight quantization. Detected by branch HEAD commit."
-    },
-    {
-      "name": "atomic",
-      "repo": "AtomicBot-ai/atomic-llama-cpp-turboquant",
-      "branch": "feature/turboquant-kv-cache",
-      "track": "branch",
-      "subdir": "atomic",
-      "note": "Fork of TheTom + Gemma4 MTP and Qwen3.6 NextN speculative decoding. Detected by branch HEAD commit."
+      "note": "TurboQuant+ KV/weight quantization. Stable = latest release (tqp-vX.Y.Z, targetCommitish is a branch -> resolved to SHA); nightly = branch HEAD."
     },
     {
       "name": "prism",
       "repo": "PrismML-Eng/llama.cpp",
       "branch": "prism",
-      "track": "branch",
+      "track": "release",
       "subdir": "prism",
-      "note": "Adds Q2_0 ternary quantization (Bonsai models). Detected by branch HEAD commit."
+      "note": "Adds Q2_0 ternary quantization (Bonsai models). Stable = latest release (prism-bXXXX-<sha>); nightly = prism branch HEAD."
+    },
+    {
+      "name": "atomic",
+      "repo": "AtomicBot-ai/atomic-llama-cpp-turboquant",
+      "branch": "feature/turboquant-kv-cache",
+      "track": "release",
+      "subdir": "atomic",
+      "note": "Fork of TheTom + Gemma4 MTP and Qwen3.6 NextN. Stable = latest release commit (targetCommitish, release binaries ignored); nightly = branch HEAD. We rebuild CUDA ourselves."
     }
   ]
 }

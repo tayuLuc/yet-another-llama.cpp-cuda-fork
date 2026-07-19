@@ -2,21 +2,24 @@ name: Build llama.cpp forks with CUDA
 
 # Best-of-all multi-fork CUDA builder.
 # Builds 4 llama.cpp forks for CUDA 13.2 (RTX 5090 / sm_120 + all prior gens), amd64 only:
-#   - vanilla      : ggml-org/llama.cpp            (tracked by release tag)
-#   - turboquant   : TheTom/llama-cpp-turboquant   (feature/turboquant-kv-cache)
-#   - atomic       : AtomicBot-ai/...turboquant     (feature/turboquant-kv-cache)
-#   - prism        : PrismML-Eng/llama.cpp          (prism branch, Q2_0 ternary)
-# All use the SAME standard CMake build (GGML_CUDA=ON). Binaries land in
-# separate subdirs so they never collide: cuda-13.2/<subdir>/llama-server.
+#   - vanilla      : ggml-org/llama.cpp
+#   - turboquant   : TheTom/llama-cpp-turboquant
+#   - atomic       : AtomicBot-ai/atomic-llama-cpp-turboquant
+#   - prism        : PrismML-Eng/llama.cpp
+# For EVERY fork we detect TWO independent sources and emit up to two release builds:
+#   - stable : latest GitHub release of the fork (prerelease releases are treated as
+#              releases too — we only need the source commit, never the release binaries).
+#   - nightly: HEAD commit of the fork's tracked branch.
+# Binaries land in separate subdirs so they never collide: cuda-13.2/<subdir>/llama-server.
 # Source of truth for what to build: forks.json (committed in repo).
 on:
   schedule:
-    # Daily at 00:00 UTC — catches new vanilla releases and fork branch moves.
+    # Daily at 00:00 UTC — catches new releases and branch moves.
     - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       force_build:
-        description: 'Force build all forks even if unchanged'
+        description: 'Force build all forks (stable+nightly) even if unchanged'
         required: false
         type: boolean
         default: false
@@ -35,7 +38,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Restore last-built refs from Actions cache (one key per fork).
+      # Restore last-built refs from Actions cache (one key per fork+mode).
       # Cache TTL is set in repo Settings > Actions > General > Cache
       # (public repos cap at 7 days; self-hosted/paid can raise it).
       - name: Restore last-built refs (cache)
@@ -43,9 +46,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache-refs
-          key: fork-refs-v1-${{ github.run_id }}
+          key: fork-refs-v2-${{ github.run_id }}
           restore-keys: |
-            fork-refs-v1-
+            fork-refs-v2-
 
       - name: Plan which forks changed
         id: plan
@@ -54,32 +57,63 @@ jobs:
 
           COUNT=$(jq '.forks | length' forks.json)
           MATRIX_ITEMS="[]"
+
           for i in $(seq 0 $((COUNT-1))); do
             NAME=$(jq -r ".forks[$i].name" forks.json)
             REPO=$(jq -r ".forks[$i].repo" forks.json)
             BRANCH=$(jq -r ".forks[$i].branch // \"\"" forks.json)
-            TRACK=$(jq -r ".forks[$i].track" forks.json)
             SUBDIR=$(jq -r ".forks[$i].subdir" forks.json)
 
-            if [ "$TRACK" = "release" ]; then
-              REF=$(curl -s "https://api.github.com/repos/${REPO}/releases" | jq -r '.[0].tag_name')
-              REF_TYPE="tag"
+            # ---- STABLE: latest release (prerelease releases count as releases) ----
+            REL=$(curl -s "https://api.github.com/repos/${REPO}/releases" | jq -r '.[0] // empty')
+            if [ -n "$REL" ]; then
+              REL_TAG=$(echo "$REL" | jq -r '.tag_name')
+              REL_PRE=$(echo "$REL" | jq -r '.prerelease')
+              REL_REF=$(echo "$REL" | jq -r '.target_commitish')
+              # target_commitish may be a branch name (e.g. turboquant) -> resolve to SHA
+              if ! echo "$REL_REF" | grep -qE '^[0-9a-f]{40}$'; then
+                REL_REF=$(curl -s "https://api.github.com/repos/${REPO}/commits/${REL_REF}" | jq -r '.sha')
+              fi
+              STABLE_REF="$REL_REF"
+              STABLE_TAG="$REL_TAG"
+              STABLE_PRE="$REL_PRE"
             else
-              REF=$(curl -s "https://api.github.com/repos/${REPO}/commits/${BRANCH}" | jq -r '.sha')
-              REF_TYPE="commit"
+              STABLE_REF=""
+              STABLE_TAG=""
+              STABLE_PRE="false"
             fi
 
-            # Last-built ref lives in .cache-refs/<name>.txt (restored above).
-            LAST=$(cat ".cache-refs/${NAME}.txt" 2>/dev/null || echo "")
-            echo "Fork $NAME: track=$TRACK ref=$REF last=$LAST"
-            if [ "$FORCE" = "true" ] || [ "$REF" != "$LAST" ]; then
-              echo "  -> changed, will build"
+            # ---- NIGHTLY: HEAD of tracked branch (only if a branch is configured) ----
+            if [ -n "$BRANCH" ]; then
+              NIGHTLY_REF=$(curl -s "https://api.github.com/repos/${REPO}/commits/${BRANCH}" | jq -r '.sha')
+            else
+              NIGHTLY_REF=""
+            fi
+
+            # ---- Emit matrix items, comparing against last-built refs ----
+            LAST_STABLE=$(cat ".cache-refs/${NAME}-stable.txt" 2>/dev/null || echo "")
+            LAST_NIGHTLY=$(cat ".cache-refs/${NAME}-nightly.txt" 2>/dev/null || echo "")
+
+            if [ -n "$STABLE_REF" ] && { [ "$FORCE" = "true" ] || [ "$STABLE_REF" != "$LAST_STABLE" ]; }; then
+              echo "Fork $NAME: stable ref=$STABLE_REF (tag=$STABLE_TAG, prerelease=$STABLE_PRE) -> changed"
               ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
-                          --arg reftype "$REF_TYPE" --arg ref "$REF" --arg subdir "$SUBDIR" \
-                          '{name:$name, repo:$repo, branch:$branch, reftype:$reftype, ref:$ref, subdir:$subdir}')
+                      --arg mode "stable" --arg ref "$STABLE_REF" --arg reltag "$STABLE_TAG" \
+                      --arg pre "$STABLE_PRE" --arg subdir "$SUBDIR" \
+                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir}')
               MATRIX_ITEMS=$(echo "$MATRIX_ITEMS" | jq --argjson it "$ITEM" '. + [$it]')
             else
-              echo "  -> unchanged, skip"
+              echo "Fork $NAME: stable ref=$STABLE_REF unchanged (last=$LAST_STABLE)"
+            fi
+
+            if [ -n "$NIGHTLY_REF" ] && { [ "$FORCE" = "true" ] || [ "$NIGHTLY_REF" != "$LAST_NIGHTLY" ]; }; then
+              echo "Fork $NAME: nightly ref=$NIGHTLY_REF -> changed"
+              ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
+                      --arg mode "nightly" --arg ref "$NIGHTLY_REF" --arg reltag "" \
+                      --arg pre "true" --arg subdir "$SUBDIR" \
+                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir}')
+              MATRIX_ITEMS=$(echo "$MATRIX_ITEMS" | jq --argjson it "$ITEM" '. + [$it]')
+            else
+              echo "Fork $NAME: nightly ref=$NIGHTLY_REF unchanged (last=$LAST_NIGHTLY)"
             fi
           done
 
@@ -114,11 +148,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.ref }}
+          key: ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.mode }}-${{ matrix.ref }}
           restore-keys: |
-            ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-
+            ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.mode }}-
 
-      - name: Build ${{ matrix.name }} with CUDA
+      - name: Build ${{ matrix.name }} (${{ matrix.mode }}) with CUDA
         env:
           CUDA_TAG: '13.2.0-cudnn-devel-ubuntu24.04'
           ARCHS: '75;80;86;89;90;100;120'
@@ -126,7 +160,8 @@ jobs:
           REPO: ${{ matrix.repo }}
           BRANCH: ${{ matrix.branch }}
           REF: ${{ matrix.ref }}
-          REFTYPE: ${{ matrix.reftype }}
+          RELTAG: ${{ matrix.reltag }}
+          MODE: ${{ matrix.mode }}
         run: |
           mkdir -p $PWD/.ccache
           docker pull nvidia/cuda:${CUDA_TAG}
@@ -134,6 +169,13 @@ jobs:
             -v $PWD:/workspace \
             -v $PWD/.ccache:/root/.ccache \
             -e CCACHE_DIR=/root/.ccache \
+            -e REPO="${REPO}" \
+            -e BRANCH="${BRANCH}" \
+            -e REF="${REF}" \
+            -e RELTAG="${RELTAG}" \
+            -e MODE="${MODE}" \
+            -e SUBDIR="${SUBDIR}" \
+            -e ARCHS="${ARCHS}" \
             nvidia/cuda:${CUDA_TAG} \
             bash -c "
               set -e
@@ -191,7 +233,9 @@ jobs:
               find binaries/cuda-13.2/\${SUBDIR}/ -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
               echo 'fork: \${REPO} (\${BRANCH:-release})' > binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
+              echo 'mode: \${MODE}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
               echo 'ref: \${REF}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
+              echo 'release-tag: \${RELTAG}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
               echo 'CUDA version: 13.2.0' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
               echo 'Architectures: \${ARCHS}' >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
               echo 'Build date: '\$(date -u +%Y-%m-%d) >> binaries/cuda-13.2/\${SUBDIR}/VERSION.txt
@@ -207,29 +251,29 @@ jobs:
       - name: Create tarball
         run: |
           cd binaries
-          tar -czf llama.cpp-cuda-13.2-${{ matrix.name }}-amd64.tar.gz cuda-13.2
+          tar -czf llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64.tar.gz cuda-13.2
           ls -lh *.tar.gz
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: llama.cpp-cuda-13.2-${{ matrix.name }}-amd64
+          name: llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64
           path: binaries/*.tar.gz
           retention-days: 1
 
       - name: Write built ref
         run: |
           mkdir -p .cache-refs
-          echo "${{ matrix.ref }}" > ".cache-refs/${{ matrix.name }}.txt"
+          echo "${{ matrix.ref }}" > ".cache-refs/${{ matrix.name }}-${{ matrix.mode }}.txt"
 
-      # Save all fork refs; check-forks restores via restore-keys "fork-refs-v1-".
+      # Save all fork refs; check-forks restores via restore-keys "fork-refs-v2-".
       - name: Save built refs to cache
         uses: actions/cache@v4
         with:
           path: .cache-refs
-          key: fork-refs-v1-${{ github.run_id }}-${{ matrix.name }}
+          key: fork-refs-v2-${{ github.run_id }}-${{ matrix.name }}-${{ matrix.mode }}
           restore-keys: |
-            fork-refs-v1-
+            fork-refs-v2-
           save-always: true
 
   release:
@@ -253,35 +297,42 @@ jobs:
           find artifacts -name '*.tar.gz' -exec cp {} release-assets/ \;
           ls -lh release-assets/
 
-      - name: Create / update release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: cuda-13.2-build-$(date -u +%Y%m%d)
-          name: CUDA 13.2 multi-fork build $(date -u +%Y-%m-%d)
-          body: |
-            # llama.cpp forks — CUDA 13.2 (RTX 5090 / sm_120)
+      - name: Create per-fork releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in release-assets/*.tar.gz; do
+            base=$(basename "$f" .tar.gz)   # llama.cpp-cuda-13.2-<name>-<mode>-amd64
+            mode=$(echo "$base" | grep -oE 'stable|nightly' | head -1)
+            name=$(echo "$base" | sed -E "s/^llama\.cpp-cuda-13\.2-//; s/-amd64\$//; s/-${mode}\$//")
+            if [ "$mode" = "stable" ]; then
+              reltag=$(tar -xzOf "$f" cuda-13.2/*/VERSION.txt 2>/dev/null | awk -F': ' '/release-tag/{print $2}')
+              tag="${name}-${reltag}"
+              prerelease="false"
+            else
+              sha=$(tar -xzOf "$f" cuda-13.2/*/VERSION.txt 2>/dev/null | awk -F': ' '/ref/{print $2}')
+              tag="${name}-nightly-${sha:0:12}"
+              prerelease="true"
+            fi
+            echo "Publishing $tag (prerelease=$prerelease) from $f"
+            gh release create "$tag" "$f" \
+              --repo "${{ github.repository }}" \
+              --title "$tag" \
+              --notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode)." \
+              $( [ "$prerelease" = "true" ] && echo "--prerelease" )
+          done
 
-            Pre-built llama.cpp CUDA binaries for **CUDA 13.2**, amd64 only, built from multiple forks.
-            Each fork lives in its own subdir inside the tarball: `cuda-13.2/<fork>/llama-server`.
-
-            | Fork | Source | Path in tarball |
-            |------|--------|-----------------|
-            | vanilla | ggml-org/llama.cpp | `cuda-13.2/vanilla/` |
-            | turboquant | TheTom/llama-cpp-turboquant | `cuda-13.2/turboquant/` |
-            | atomic | AtomicBot-ai/atomic-llama-cpp-turboquant | `cuda-13.2/atomic/` |
-            | prism | PrismML-Eng/llama.cpp | `cuda-13.2/prism/` |
-
-            ## Requirements
-            - NVIDIA driver >= 580.13 (CUDA 13.2)
-            - CUDA runtime libs are **bundled** in each tarball — no toolkit install needed
-            - Compute capabilities: 7.5, 8.0, 8.6, 8.9, 9.0, 10.0, 12.0
-
-            ## Usage
-            ```bash
-            tar -xzf llama.cpp-cuda-13.2-<fork>-amd64.tar.gz
-            cd cuda-13.2/<fork>
-            ./llama-server -m model.gguf
-            ```
-          files: release-assets/*
-          draft: false
-          prerelease: false
+      - name: Trigger image repo build
+        env:
+          GH_TOKEN: ${{ secrets.IMAGE_REPO_TOKEN }}
+        run: |
+          MATRIX='${{ needs.check-forks.outputs.matrix }}'
+          if echo "$MATRIX" | grep -q '"mode":"nightly"'; then
+            IMG_MODE=nightly
+          else
+            IMG_MODE=stable
+          fi
+          echo "Triggering image repo build (mode=$IMG_MODE)"
+          gh workflow run build-image.yml \
+            --repo tayuLuc/llama-swap-cuda-images \
+            -f mode="$IMG_MODE" || echo "Image repo trigger skipped (token/permission missing)"
