@@ -61,6 +61,11 @@ cp -a "${CUDA_LIB}"/libcudart.so* "binaries/${SUBDIR}/"
 cp -a "${CUDA_LIB}"/libcublas.so* "binaries/${SUBDIR}/"
 cp -a "${CUDA_LIB}"/libcublasLt.so* "binaries/${SUBDIR}/"
 
+# Bundle llama.cpp shared libs (libllama.so, libggml*.so, ...) so dynamically
+# linked binaries (e.g. prism/atomic forks with BUILD_SHARED_LIBS=ON) find them
+# at runtime. Copied next to the binaries so the loader resolves them directly.
+find src/build -maxdepth 3 -type f -name 'lib*.so*' -exec cp -a {} "binaries/${SUBDIR}/" \;
+
 find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
 echo "fork: ${REPO} (${BRANCH:-release})" > "binaries/${SUBDIR}/VERSION.txt"
