@@ -91,14 +91,23 @@ echo "CUDA version: 13.2.0" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "Architectures: ${ARCHS}" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "Build date: $(date -u +%Y-%m-%d)" >> "binaries/${SUBDIR}/VERSION.txt"
 
-# Smoke test: every binary must actually start and print --help. Catches
-# missing/broken shared libs (e.g. a binary that won't load at runtime)
-# before we ship it. Fail the build if any binary can't run.
-echo "=== smoke test (--help) ==="
+# Smoke test: verify every binary's shared libs resolve (catches missing/
+# broken .so like a mislinked CUDA runtime). We use `ldd` instead of running
+# the binary because llama-server probes CUDA at startup and there is no GPU
+# in the build runner — running it would fail for an unrelated reason.
+echo "=== smoke test (ldd) ==="
+# rpath=$ORIGIN makes the loader look next to the binary first; CUDA .so's live
+# in the CUDA toolkit, not the binary dir, so point ldd at it (as the swap
+# image and a local toolkit install would).
+export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 for b in llama-server llama-cli llama-bench; do
   bin="binaries/${SUBDIR}/$b"
   [ -x "$bin" ] || { echo "MISSING: $b"; exit 1; }
-  "$bin" --help >/dev/null 2>&1 || { echo "SMOKE FAIL: $b --help exited non-zero"; exit 1; }
+  if ldd "$bin" 2>&1 | grep -q "not found"; then
+    echo "SMOKE FAIL: $b has unresolved shared libraries:"
+    ldd "$bin"
+    exit 1
+  fi
   echo "ok: $b"
 done
 
