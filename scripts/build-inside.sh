@@ -90,8 +90,14 @@ if [ "$SUBDIR" = "vanilla" ]; then
   # (libcudart.so -> ... -> real file in targets/), so a plain cp would copy
   # dangling links. -L copies the real library bytes, making the asset
   # self-contained for local (non-Docker) use.
-  for lib in libcudart.so* libcublas.so* libcublasLt.so*; do
-    cp -L "${CUDA_LIB}/$lib" "$tmp_cuda/" 2>/dev/null || true
+  # cp -L resolves the lib64 symlink to the real .so bytes; one file per lib.
+  # Note: the glob below is prefixed with $CUDA_LIB — a bare "libcudart.so*"
+  # in a for-loop expands against $PWD and silently matches nothing.
+  for name in libcudart libcublas libcublasLt; do
+    soname=$(objdump -p "$CUDA_LIB/$name.so" 2>/dev/null | awk '/SONAME/ {print $2}')
+    [ -n "$soname" ] || soname=$(ls -v "$CUDA_LIB"/$name.so.* 2>/dev/null | tail -1 | xargs basename)
+    [ -n "$soname" ] || continue
+    cp -L "$CUDA_LIB/$soname" "$tmp_cuda/$soname" 2>/dev/null || true
   done
   # strip the CUDA libs too — shrinks the asset considerably
   find "$tmp_cuda" -type f -executable -exec strip {} \; 2>/dev/null || true
