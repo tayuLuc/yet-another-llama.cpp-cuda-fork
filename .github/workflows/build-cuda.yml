@@ -43,7 +43,7 @@ jobs:
       # (public repos cap at 7 days; self-hosted/paid can raise it).
       - name: Restore last-built refs (cache)
         id: restore-refs
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache-refs
           key: fork-refs-v2-${{ github.run_id }}
@@ -169,7 +169,7 @@ jobs:
           df -h
 
       - name: Setup Compiler Cache (ccache)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.mode }}-${{ matrix.ref }}
@@ -217,7 +217,7 @@ jobs:
 
       - name: Upload artifact
         if: steps.chk.outputs.skip != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64
           path: binaries/*.tar.gz
@@ -230,7 +230,7 @@ jobs:
 
       # Save all fork refs; check-forks restores via restore-keys "fork-refs-v2-".
       - name: Save built refs to cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache-refs
           key: fork-refs-v2-${{ github.run_id }}-${{ matrix.name }}-${{ matrix.mode }}
