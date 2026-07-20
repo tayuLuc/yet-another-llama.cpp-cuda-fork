@@ -266,6 +266,12 @@ jobs:
             {
               echo "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode)."
               echo
+              if [ "$name" = "vanilla" ]; then
+                echo "**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\`."
+                echo "Download it once and place its \`.so\` files next to any fork's binaries (or set \`LD_LIBRARY_PATH\`)."
+                echo "The llama-swap Docker image does NOT need it — its base \`nvidia/cuda:13.2-runtime\` already provides CUDA."
+                echo
+              fi
               echo "<details><summary>--help output (fork features)</summary>"
               echo
               echo '```'
@@ -276,7 +282,13 @@ jobs:
             } > "$notes_file"
             notes_args=(--notes-file "$notes_file")
           else
-            notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
+            if [ "$name" = "vanilla" ]; then
+              notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).
+
+**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\` — download it once and place its \`.so\` files next to any fork's binaries. The llama-swap Docker image does NOT need it.")
+            else
+              notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
+            fi
           fi
           # The vanilla release also carries the shared CUDA runtime asset so
           # local users on a bare OS can grab the .so's once. Other forks do

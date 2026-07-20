@@ -23,8 +23,14 @@ For every fork we detect **two independent sources** and emit one release each:
 - **nightly** — HEAD commit of the fork's tracked branch.
 
 So up to **8 releases** per run (4 forks × 2 modes). Each release contains
-`llama-server`, `llama-cli`, `llama-bench`, the bundled CUDA runtime `.so`
-libraries, and `VERSION.txt`.
+`llama-server`, `llama-cli`, `llama-bench`, and `VERSION.txt`.
+
+The CUDA runtime `.so` libraries (`libcudart`, `libcublas`, `libcublasLt`) are
+**not** bundled inside fork tarballs. Instead, the **vanilla** release also
+ships a single shared asset `cuda-runtime-13.2-amd64.tar.gz` — download it once
+and place its `.so` files next to any fork's binaries (or set
+`LD_LIBRARY_PATH`) for local, non-Docker use. The llama-swap Docker image does
+not need it: its base `nvidia/cuda:13.2-runtime` already provides CUDA.
 
 ## Release tag scheme
 
@@ -70,4 +76,7 @@ scripts/build-inside.sh    # the actual cmake + build + packaging steps
 
 - NVIDIA GPU, compute capability **7.5+** (12.0 for RTX 5090)
 - **NVIDIA driver >= 580.13** (CUDA 13.2)
-- Linux x86_64; CUDA runtime is **bundled** in each tarball — no toolkit needed
+- Linux x86_64. For local (non-Docker) use, grab `cuda-runtime-13.2-amd64.tar.gz`
+  from the **vanilla** release and place its `.so` files beside the binaries
+  (or `export LD_LIBRARY_PATH=…`). No full CUDA toolkit required — just the
+  driver. The llama-swap Docker image provides CUDA via its base image.
