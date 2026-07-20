@@ -72,7 +72,14 @@ find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \;
 # already provides the CUDA .so's).
 if [ "$SUBDIR" = "vanilla" ]; then
   CUDA_VER=$(echo "${CUDA_TAG:-13.2.0-cudnn-devel-ubuntu24.04}" | sed -E 's/-.*//; s/\.[0-9]+-cudnn.*//')
-  CUDA_LIB=/usr/local/cuda/targets/x86_64-linux/lib
+  # The CUDA runtime .so's live in different dirs across toolkit images
+  # (/usr/local/cuda/lib64 vs /usr/local/cuda/targets/x86_64-linux/lib).
+  # Probe both and use whichever actually has them.
+  CUDA_LIB=""
+  for d in /usr/local/cuda/lib64 /usr/local/cuda/targets/x86_64-linux/lib; do
+    if ls "$d"/libcudart.so* >/dev/null 2>&1; then CUDA_LIB="$d"; break; fi
+  done
+  [ -n "$CUDA_LIB" ] || { echo "CUDA runtime libs not found"; exit 1; }
   mkdir -p /workspace/cuda-asset
   CUDA_TARBALL="/workspace/cuda-asset/cuda-runtime-${CUDA_VER}-amd64.tar.gz"
   tmp_cuda=$(mktemp -d)
@@ -83,7 +90,7 @@ if [ "$SUBDIR" = "vanilla" ]; then
   find "$tmp_cuda" -type f -executable -exec strip {} \; 2>/dev/null || true
   tar -czf "$CUDA_TARBALL" -C "$tmp_cuda" .
   rm -rf "$tmp_cuda"
-  echo "created $CUDA_TARBALL"
+  echo "created $CUDA_TARBALL ($(du -h "$CUDA_TARBALL" | cut -f1))"
 fi
 
 echo "fork: ${REPO} (${BRANCH:-release})" > "binaries/${SUBDIR}/VERSION.txt"
@@ -94,22 +101,9 @@ echo "CUDA version: 13.2.0" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "Architectures: ${ARCHS}" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "Build date: $(date -u +%Y-%m-%d)" >> "binaries/${SUBDIR}/VERSION.txt"
 
-# Capture --help output per binary for the release notes (fork features are
-# only discoverable from --help, so we attach it as a collapsible section).
-# Best-effort: llama-server may probe CUDA at startup and there is no GPU in
-# the runner, so a failed --help is captured as a placeholder rather than a
-# build failure. CUDA libs are on LD_LIBRARY_PATH so resolvable .so's load.
-export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
-HELP="binaries/${SUBDIR}/HELP.txt"
-: > "$HELP"
+# Sanity check: the three primary binaries must have been built and linked.
 for b in llama-server llama-cli llama-bench; do
-  bin="binaries/${SUBDIR}/$b"
-  [ -x "$bin" ] || { echo "MISSING: $b"; exit 1; }
-  echo "### $b --help" >> "$HELP"
-  echo '```' >> "$HELP"
-  "$bin" --help >> "$HELP" 2>&1 || echo "(--help unavailable on this runner)" >> "$HELP"
-  echo '```' >> "$HELP"
-  echo >> "$HELP"
+  [ -x "binaries/${SUBDIR}/$b" ] || { echo "MISSING: $b"; exit 1; }
 done
 
 ls -lh "binaries/${SUBDIR}/"
