@@ -278,8 +278,18 @@ jobs:
           else
             notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
           fi
+          # The vanilla release also carries the shared CUDA runtime asset so
+          # local users on a bare OS can grab the .so's once. Other forks do
+          # not bundle it (their tarballs stay light); the swap image gets
+          # CUDA from its nvidia/cuda:runtime base instead.
+          extra_args=()
+          if [ "$name" = "vanilla" ] && [ -f binaries/cuda-runtime-*.tar.gz ]; then
+            cuda_asset=$(ls binaries/cuda-runtime-*.tar.gz | head -1)
+            extra_args+=("$cuda_asset")
+            echo "  + CUDA runtime asset: $cuda_asset"
+          fi
           echo "Publishing $tag (prerelease=$prerelease) from $f"
-          gh release create "$tag" "$f" \
+          gh release create "$tag" "$f" "${extra_args[@]}" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
             "${notes_args[@]}" \

@@ -65,6 +65,24 @@ done
 
 find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
+# Package the CUDA runtime .so's into a SEPARATE shared asset, so any fork
+# tarball stays light (~50MB) and local users on a bare OS can grab the CUDA
+# libs once. The swap image does NOT need this (its base nvidia/cuda:runtime
+# already provides them). cuda-runtime-<ver>-amd64.tar.gz lands next to the
+# fork subdirs in binaries/ and is published only alongside the vanilla release.
+CUDA_VER=$(echo "${CUDA_TAG:-13.2.0-cudnn-devel-ubuntu24.04}" | sed -E 's/-.*//; s/\.[0-9]+-cudnn.*//')
+CUDA_LIB=/usr/local/cuda/targets/x86_64-linux/lib
+CUDA_TARBALL="binaries/cuda-runtime-${CUDA_VER}-amd64.tar.gz"
+tmp_cuda=$(mktemp -d)
+for lib in libcudart.so* libcublas.so* libcublasLt.so*; do
+  cp -a "${CUDA_LIB}/$lib" "$tmp_cuda/" 2>/dev/null || true
+done
+# strip the CUDA libs too — shrinks the asset considerably
+find "$tmp_cuda" -type f -executable -exec strip {} \; 2>/dev/null || true
+tar -czf "$CUDA_TARBALL" -C "$tmp_cuda" .
+rm -rf "$tmp_cuda"
+echo "created $CUDA_TARBALL"
+
 echo "fork: ${REPO} (${BRANCH:-release})" > "binaries/${SUBDIR}/VERSION.txt"
 echo "mode: ${MODE}" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "ref: ${REF}" >> "binaries/${SUBDIR}/VERSION.txt"
