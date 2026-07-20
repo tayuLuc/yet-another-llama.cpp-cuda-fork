@@ -32,7 +32,7 @@ cmake -B build -S . \
   -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
   -DCMAKE_CUDA_ARCHITECTURES="$ARCHS" \
   -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_SHARED_LIBS=ON \
+  -DBUILD_SHARED_LIBS=OFF \
   -DGGML_NATIVE=OFF \
   -DLLAMA_BUILD_TESTS=OFF \
   -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -55,16 +55,14 @@ for b in llama-server llama-cli llama-bench; do
   fi
 done
 
-# Bundle CUDA runtime so users don't need the full toolkit installed
+# Bundle CUDA runtime so users don't need the full toolkit installed.
+# llama.cpp is built with BUILD_SHARED_LIBS=OFF, so the binaries are
+# self-contained (libllama/libggml are linked statically into each binary).
+# Only the CUDA runtime .so's remain dynamically linked and must travel along.
 CUDA_LIB=/usr/local/cuda/targets/x86_64-linux/lib
 cp -a "${CUDA_LIB}"/libcudart.so* "binaries/${SUBDIR}/"
 cp -a "${CUDA_LIB}"/libcublas.so* "binaries/${SUBDIR}/"
 cp -a "${CUDA_LIB}"/libcublasLt.so* "binaries/${SUBDIR}/"
-
-# Bundle llama.cpp shared libs (libllama.so, libggml*.so, ...) so dynamically
-# linked binaries (e.g. prism/atomic forks with BUILD_SHARED_LIBS=ON) find them
-# at runtime. Copied next to the binaries so the loader resolves them directly.
-find src/build -maxdepth 3 -type f -name 'lib*.so*' -exec cp -a {} "binaries/${SUBDIR}/" \;
 
 find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
