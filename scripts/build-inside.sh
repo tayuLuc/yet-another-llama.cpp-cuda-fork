@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build llama.cpp fork inside the CUDA container and package the 3 primary
-# binaries (llama-server, llama-cli, llama-bench) + CUDA runtime libs.
+# binaries (llama-server, llama-cli, llama-bench). For the vanilla fork only,
+# also package the CUDA runtime libs into a separate asset (see below).
 set -e
 
 apt-get update -qq
@@ -57,11 +58,11 @@ done
 
 # llama.cpp is built with BUILD_SHARED_LIBS=OFF, so libllama/libggml are
 # linked statically into each binary — no llama.cpp .so to ship.
-# CUDA runtime .so's (cudart/cublas/cublasLt) are NOT bundled: the swap image
-# is FROM nvidia/cuda:13.2-runtime, which already provides them at
-# /usr/local/cuda/lib64 (CUDA ABI is stable within a major version, so a
-# binary built against 13.2-devel runs fine against 13.2-runtime). This keeps
-# the tarball ~150MB instead of ~1GB.
+# CUDA runtime .so's (cudart/cublas/cublasLt) are NOT bundled in the fork
+# tarball: the swap image is FROM nvidia/cuda:13.2-runtime, which already
+# provides them at /usr/local/cuda/lib64 (CUDA ABI is stable within a major
+# version, so a binary built against 13.2-devel runs fine against 13.2-runtime).
+# For local, non-Docker use the vanilla release ships them separately below.
 
 find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
@@ -71,7 +72,9 @@ find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \;
 # light. The swap image does NOT need this (its base nvidia/cuda:runtime
 # already provides the CUDA .so's).
 if [ "$SUBDIR" = "vanilla" ]; then
-  CUDA_VER=$(echo "${CUDA_TAG:-13.2.0-cudnn-devel-ubuntu24.04}" | sed -E 's/-.*//; s/\.[0-9]+-cudnn.*//')
+  # Asset name uses major.minor (13.2) to match the documented filename
+  # cuda-runtime-13.2-amd64.tar.gz (forks.json cuda_version_short).
+  CUDA_VER=$(echo "${CUDA_TAG:-13.2.0-cudnn-devel-ubuntu24.04}" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')
   # The CUDA runtime .so's live in different dirs across toolkit images
   # (/usr/local/cuda/lib64 vs /usr/local/cuda/targets/x86_64-linux/lib).
   # Probe both and use whichever actually has them.
@@ -83,8 +86,12 @@ if [ "$SUBDIR" = "vanilla" ]; then
   mkdir -p /workspace/cuda-asset
   CUDA_TARBALL="/workspace/cuda-asset/cuda-runtime-${CUDA_VER}-amd64.tar.gz"
   tmp_cuda=$(mktemp -d)
+  # -L dereferences symlinks: in the toolkit image lib64 holds symlinks
+  # (libcudart.so -> ... -> real file in targets/), so a plain cp would copy
+  # dangling links. -L copies the real library bytes, making the asset
+  # self-contained for local (non-Docker) use.
   for lib in libcudart.so* libcublas.so* libcublasLt.so*; do
-    cp -a "${CUDA_LIB}/$lib" "$tmp_cuda/" 2>/dev/null || true
+    cp -L "${CUDA_LIB}/$lib" "$tmp_cuda/" 2>/dev/null || true
   done
   # strip the CUDA libs too — shrinks the asset considerably
   find "$tmp_cuda" -type f -executable -exec strip {} \; 2>/dev/null || true

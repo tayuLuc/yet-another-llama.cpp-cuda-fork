@@ -49,7 +49,7 @@ not need it: its base `nvidia/cuda:13.2-runtime` already provides CUDA.
 2. **`build`** — 8 parallel jobs. Each runs `scripts/build-inside.sh` inside
    `nvidia/cuda:13.2.0-cudnn-devel-ubuntu24.04` with:
    - UI disabled (`-DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_WEBUI=OFF`)
-   - CUDA on, architectures `75;80;86;89;90;100;120`
+    - CUDA on, architectures from `forks.json` (`75-virtual;80-virtual;86-virtual;89-virtual;90-virtual;100-virtual;120` — PTX for 7.5–10.0, SASS for 12.0 / RTX 5090)
    - ccache for incremental rebuilds
    Each job publishes its own release on success, **independently** — a failure
    in one fork does not block the others.
@@ -62,7 +62,6 @@ not need it: its base `nvidia/cuda:13.2-runtime` already provides CUDA.
 
 - `workflow_dispatch` with `force_build` (build all forks regardless of change)
 - daily `schedule` (catches new releases / branch moves)
-- `push` to `main`
 
 ## Layout
 

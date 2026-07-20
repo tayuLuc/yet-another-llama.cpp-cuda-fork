@@ -56,6 +56,7 @@ jobs:
           FORCE="${{ github.event.inputs.force_build }}"
 
           COUNT=$(jq '.forks | length' forks.json)
+          ARCHS=$(jq -r '.architectures' forks.json)
           MATRIX_ITEMS="[]"
 
           for i in $(seq 0 $((COUNT-1))); do
@@ -98,8 +99,8 @@ jobs:
               echo "Fork $NAME: stable ref=$STABLE_REF (tag=$STABLE_TAG, prerelease=$STABLE_PRE) -> changed"
               ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
                       --arg mode "stable" --arg ref "$STABLE_REF" --arg reltag "$STABLE_TAG" \
-                      --arg pre "$STABLE_PRE" --arg subdir "$SUBDIR" \
-                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir}')
+                      --arg pre "$STABLE_PRE" --arg subdir "$SUBDIR" --arg arch "$ARCHS" \
+                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir, architectures:$arch}')
               MATRIX_ITEMS=$(echo "$MATRIX_ITEMS" | jq --argjson it "$ITEM" '. + [$it]')
             else
               echo "Fork $NAME: stable ref=$STABLE_REF unchanged (last=$LAST_STABLE)"
@@ -109,8 +110,8 @@ jobs:
               echo "Fork $NAME: nightly ref=$NIGHTLY_REF -> changed"
               ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
                       --arg mode "nightly" --arg ref "$NIGHTLY_REF" --arg reltag "" \
-                      --arg pre "true" --arg subdir "$SUBDIR" \
-                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir}')
+                      --arg pre "true" --arg subdir "$SUBDIR" --arg arch "$ARCHS" \
+                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir, architectures:$arch}')
               MATRIX_ITEMS=$(echo "$MATRIX_ITEMS" | jq --argjson it "$ITEM" '. + [$it]')
             else
               echo "Fork $NAME: nightly ref=$NIGHTLY_REF unchanged (last=$LAST_NIGHTLY)"
@@ -190,7 +191,7 @@ jobs:
         if: steps.chk.outputs.skip != 'true'
         env:
           CUDA_TAG: '13.2.0-cudnn-devel-ubuntu24.04'
-          ARCHS: '75;80;86;89;90;100;120'
+          ARCHS: ${{ matrix.architectures }}
           SUBDIR: ${{ matrix.subdir }}
           REPO: ${{ matrix.repo }}
           BRANCH: ${{ matrix.branch }}
@@ -273,36 +274,12 @@ jobs:
             tag="${name}-nightly-${sha12}"
             prerelease="true"
           fi
-          # Pull the --help capture out of the tarball and wrap it in a
-          # collapsible <details> section so fork features are visible on the
-          # release page without downloading the binaries.
-          help=$(tar -xzOf "$f" ${name}/HELP.txt 2>/dev/null || true)
-          if [ -n "$help" ]; then
-            notes_file=$(mktemp)
-            {
-              echo "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode)."
-              echo
-              if [ "$name" = "vanilla" ]; then
-                echo "**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\`."
-                echo "Download it once and place its \`.so\` files next to any fork's binaries (or set \`LD_LIBRARY_PATH\`)."
-                echo "The llama-swap Docker image does NOT need it — its base \`nvidia/cuda:13.2-runtime\` already provides CUDA."
-                echo
-              fi
-              echo "<details><summary>--help output (fork features)</summary>"
-              echo
-              echo '```'
-              echo "$help"
-              echo '```'
-              echo
-              echo "</details>"
-            } > "$notes_file"
-            notes_args=(--notes-file "$notes_file")
+          # Release notes. The vanilla release also ships a shared CUDA runtime
+          # asset (handled below) for local, non-Docker use.
+          if [ "$name" = "vanilla" ]; then
+            notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).\n\n**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\` — download it once and place its \`.so\` files next to any fork's binaries. The llama-swap Docker image does NOT need it.")
           else
-            if [ "$name" = "vanilla" ]; then
-              notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).\n\n**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\` — download it once and place its \`.so\` files next to any fork's binaries. The llama-swap Docker image does NOT need it.")
-            else
-              notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
-            fi
+            notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
           fi
           # The vanilla release also carries the shared CUDA runtime asset
           # (built into cuda-asset/, outside binaries/) so local users on a
