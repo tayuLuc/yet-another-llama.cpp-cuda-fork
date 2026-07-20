@@ -39,7 +39,7 @@ cmake -B build -S . \
   -DLLAMA_BUILD_UI=OFF \
   -DLLAMA_USE_PREBUILT_UI=OFF \
   -DLLAMA_BUILD_WEBUI=OFF \
-  -DCMAKE_EXE_LINKER_FLAGS='-fuse-ld=lld -Wl,-rpath-link,/usr/local/cuda/lib64/stubs' \
+  -DCMAKE_EXE_LINKER_FLAGS='-fuse-ld=lld -Wl,-rpath-link,/usr/local/cuda/lib64/stubs -Wl,-rpath,$ORIGIN' \
   -DCMAKE_SHARED_LINKER_FLAGS='-fuse-ld=lld -Wl,-rpath-link,/usr/local/cuda/lib64/stubs'
 
 cmake --build build --config Release -j"$(nproc)"
@@ -55,14 +55,13 @@ for b in llama-server llama-cli llama-bench; do
   fi
 done
 
-# Bundle CUDA runtime so users don't need the full toolkit installed.
-# llama.cpp is built with BUILD_SHARED_LIBS=OFF, so the binaries are
-# self-contained (libllama/libggml are linked statically into each binary).
-# Only the CUDA runtime .so's remain dynamically linked and must travel along.
-CUDA_LIB=/usr/local/cuda/targets/x86_64-linux/lib
-cp -a "${CUDA_LIB}"/libcudart.so* "binaries/${SUBDIR}/"
-cp -a "${CUDA_LIB}"/libcublas.so* "binaries/${SUBDIR}/"
-cp -a "${CUDA_LIB}"/libcublasLt.so* "binaries/${SUBDIR}/"
+# llama.cpp is built with BUILD_SHARED_LIBS=OFF, so libllama/libggml are
+# linked statically into each binary — no llama.cpp .so to ship.
+# CUDA runtime .so's (cudart/cublas/cublasLt) are NOT bundled: the swap image
+# is FROM nvidia/cuda:13.2-runtime, which already provides them at
+# /usr/local/cuda/lib64 (CUDA ABI is stable within a major version, so a
+# binary built against 13.2-devel runs fine against 13.2-runtime). This keeps
+# the tarball ~150MB instead of ~1GB.
 
 find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
