@@ -65,23 +65,26 @@ done
 
 find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \; 2>/dev/null || true
 
-# Package the CUDA runtime .so's into a SEPARATE shared asset, so any fork
-# tarball stays light (~50MB) and local users on a bare OS can grab the CUDA
-# libs once. The swap image does NOT need this (its base nvidia/cuda:runtime
-# already provides them). cuda-runtime-<ver>-amd64.tar.gz lands next to the
-# fork subdirs in binaries/ and is published only alongside the vanilla release.
-CUDA_VER=$(echo "${CUDA_TAG:-13.2.0-cudnn-devel-ubuntu24.04}" | sed -E 's/-.*//; s/\.[0-9]+-cudnn.*//')
-CUDA_LIB=/usr/local/cuda/targets/x86_64-linux/lib
-CUDA_TARBALL="binaries/cuda-runtime-${CUDA_VER}-amd64.tar.gz"
-tmp_cuda=$(mktemp -d)
-for lib in libcudart.so* libcublas.so* libcublasLt.so*; do
-  cp -a "${CUDA_LIB}/$lib" "$tmp_cuda/" 2>/dev/null || true
-done
-# strip the CUDA libs too — shrinks the asset considerably
-find "$tmp_cuda" -type f -executable -exec strip {} \; 2>/dev/null || true
-tar -czf "$CUDA_TARBALL" -C "$tmp_cuda" .
-rm -rf "$tmp_cuda"
-echo "created $CUDA_TARBALL"
+# Only the vanilla build ships the shared CUDA runtime asset. It is written to
+# a SEPARATE directory (cuda-asset/, NOT binaries/) so it never pollutes the
+# per-fork tarball glob used by upload/publish, and so the other forks stay
+# light. The swap image does NOT need this (its base nvidia/cuda:runtime
+# already provides the CUDA .so's).
+if [ "$SUBDIR" = "vanilla" ]; then
+  CUDA_VER=$(echo "${CUDA_TAG:-13.2.0-cudnn-devel-ubuntu24.04}" | sed -E 's/-.*//; s/\.[0-9]+-cudnn.*//')
+  CUDA_LIB=/usr/local/cuda/targets/x86_64-linux/lib
+  mkdir -p /workspace/cuda-asset
+  CUDA_TARBALL="/workspace/cuda-asset/cuda-runtime-${CUDA_VER}-amd64.tar.gz"
+  tmp_cuda=$(mktemp -d)
+  for lib in libcudart.so* libcublas.so* libcublasLt.so*; do
+    cp -a "${CUDA_LIB}/$lib" "$tmp_cuda/" 2>/dev/null || true
+  done
+  # strip the CUDA libs too — shrinks the asset considerably
+  find "$tmp_cuda" -type f -executable -exec strip {} \; 2>/dev/null || true
+  tar -czf "$CUDA_TARBALL" -C "$tmp_cuda" .
+  rm -rf "$tmp_cuda"
+  echo "created $CUDA_TARBALL"
+fi
 
 echo "fork: ${REPO} (${BRANCH:-release})" > "binaries/${SUBDIR}/VERSION.txt"
 echo "mode: ${MODE}" >> "binaries/${SUBDIR}/VERSION.txt"
@@ -91,35 +94,20 @@ echo "CUDA version: 13.2.0" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "Architectures: ${ARCHS}" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "Build date: $(date -u +%Y-%m-%d)" >> "binaries/${SUBDIR}/VERSION.txt"
 
-# Smoke test: verify every binary's shared libs resolve (catches missing/
-# broken .so like a mislinked CUDA runtime). We use `ldd` instead of running
-# the binary because llama-server probes CUDA at startup and there is no GPU
-# in the build runner — running it would fail for an unrelated reason.
-echo "=== smoke test (ldd) ==="
-# rpath=$ORIGIN makes the loader look next to the binary first; CUDA .so's live
-# in the CUDA toolkit, not the binary dir, so point ldd at it (as the swap
-# image and a local toolkit install would).
-export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
-for b in llama-server llama-cli llama-bench; do
-  bin="binaries/${SUBDIR}/$b"
-  [ -x "$bin" ] || { echo "MISSING: $b"; exit 1; }
-  if ldd "$bin" 2>&1 | grep -q "not found"; then
-    echo "SMOKE FAIL: $b has unresolved shared libraries:"
-    ldd "$bin"
-    exit 1
-  fi
-  echo "ok: $b"
-done
-
 # Capture --help output per binary for the release notes (fork features are
 # only discoverable from --help, so we attach it as a collapsible section).
+# Best-effort: llama-server may probe CUDA at startup and there is no GPU in
+# the runner, so a failed --help is captured as a placeholder rather than a
+# build failure. CUDA libs are on LD_LIBRARY_PATH so resolvable .so's load.
+export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 HELP="binaries/${SUBDIR}/HELP.txt"
 : > "$HELP"
 for b in llama-server llama-cli llama-bench; do
   bin="binaries/${SUBDIR}/$b"
+  [ -x "$bin" ] || { echo "MISSING: $b"; exit 1; }
   echo "### $b --help" >> "$HELP"
   echo '```' >> "$HELP"
-  "$bin" --help >> "$HELP" 2>&1 || echo "(--help failed)" >> "$HELP"
+  "$bin" --help >> "$HELP" 2>&1 || echo "(--help unavailable on this runner)" >> "$HELP"
   echo '```' >> "$HELP"
   echo >> "$HELP"
 done

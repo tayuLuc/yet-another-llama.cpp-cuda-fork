@@ -139,6 +139,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          FORCE="${{ github.event.inputs.force_build }}"
           SHA12="${{ matrix.ref }}"
           SHA12="${SHA12:0:12}"
           if [ "${{ matrix.mode }}" = "stable" ]; then
@@ -146,10 +147,19 @@ jobs:
           else
             TAG="${{ matrix.name }}-nightly-${SHA12}"
           fi
-          echo "Checking for existing release: $TAG"
+          echo "Checking for existing release: $TAG (force_build=$FORCE)"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "Release $TAG already exists — skipping build."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            if [ "$FORCE" = "true" ]; then
+              # Force rebuild: drop the existing release AND its tag so the
+              # later `gh release create` can reuse the same tag.
+              echo "force_build: deleting existing $TAG to rebuild"
+              gh release delete "$TAG" --repo "${{ github.repository }}" --yes >/dev/null 2>&1 || true
+              gh api -X DELETE "/repos/${{ github.repository }}/git/refs/tags/${TAG}" >/dev/null 2>&1 || true
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "Release $TAG already exists — skipping build."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -245,16 +255,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          f=$(ls binaries/*.tar.gz)
-          base=$(basename "$f" .tar.gz)   # llama.cpp-cuda-13.2-<name>-<mode>-amd64
-          mode=$(echo "$base" | grep -oE 'stable|nightly' | head -1)
-          name=$(echo "$base" | sed -E "s/^llama\.cpp-cuda-13\.2-//; s/-amd64\$//; s/-${mode}\$//")
-          sha=$(tar -xzOf "$f" ${name}/VERSION.txt 2>/dev/null | awk -F': ' '/ref/{print $2}')
+          name="${{ matrix.name }}"
+          mode="${{ matrix.mode }}"
+          sha="${{ matrix.ref }}"
+          sha12="${sha:0:12}"
+          # Explicit tarball path (do NOT glob binaries/*.tar.gz — the CUDA
+          # asset would sort before the fork tarball and break parsing).
+          f="binaries/llama.cpp-cuda-13.2-${name}-${mode}-amd64.tar.gz"
+          if [ ! -f "$f" ]; then
+            echo "FATAL: built tarball missing: $f"
+            exit 1
+          fi
           if [ "$mode" = "stable" ]; then
-            tag="${name}-${sha:0:12}"
+            tag="${name}-${sha12}"
             prerelease="false"
           else
-            tag="${name}-nightly-${sha:0:12}"
+            tag="${name}-nightly-${sha12}"
             prerelease="true"
           fi
           # Pull the --help capture out of the tarball and wrap it in a
@@ -288,13 +304,13 @@ jobs:
               notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
             fi
           fi
-          # The vanilla release also carries the shared CUDA runtime asset so
-          # local users on a bare OS can grab the .so's once. Other forks do
-          # not bundle it (their tarballs stay light); the swap image gets
-          # CUDA from its nvidia/cuda:runtime base instead.
+          # The vanilla release also carries the shared CUDA runtime asset
+          # (built into cuda-asset/, outside binaries/) so local users on a
+          # bare OS can grab the .so's once. Other forks do not bundle it; the
+          # swap image gets CUDA from its nvidia/cuda:runtime base instead.
           extra_args=()
-          if [ "$name" = "vanilla" ] && [ -f binaries/cuda-runtime-*.tar.gz ]; then
-            cuda_asset=$(ls binaries/cuda-runtime-*.tar.gz | head -1)
+          if [ "$name" = "vanilla" ] && ls cuda-asset/cuda-runtime-*.tar.gz >/dev/null 2>&1; then
+            cuda_asset=$(ls cuda-asset/cuda-runtime-*.tar.gz | head -1)
             extra_args+=("$cuda_asset")
             echo "  + CUDA runtime asset: $cuda_asset"
           fi
