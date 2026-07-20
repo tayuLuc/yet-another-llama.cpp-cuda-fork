@@ -257,11 +257,32 @@ jobs:
             tag="${name}-nightly-${sha:0:12}"
             prerelease="true"
           fi
+          # Pull the --help capture out of the tarball and wrap it in a
+          # collapsible <details> section so fork features are visible on the
+          # release page without downloading the binaries.
+          help=$(tar -xzOf "$f" ${name}/HELP.txt 2>/dev/null || true)
+          if [ -n "$help" ]; then
+            notes_file=$(mktemp)
+            {
+              echo "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode)."
+              echo
+              echo "<details><summary>--help output (fork features)</summary>"
+              echo
+              echo '```'
+              echo "$help"
+              echo '```'
+              echo
+              echo "</details>"
+            } > "$notes_file"
+            notes_args=(--notes-file "$notes_file")
+          else
+            notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
+          fi
           echo "Publishing $tag (prerelease=$prerelease) from $f"
           gh release create "$tag" "$f" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
-            --notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode)." \
+            "${notes_args[@]}" \
             $( [ "$prerelease" = "true" ] && echo "--prerelease" )
 
   # Trigger the swap-image build ONLY after ALL parallel builds finish.

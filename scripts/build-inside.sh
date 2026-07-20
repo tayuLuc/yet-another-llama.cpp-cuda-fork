@@ -74,5 +74,29 @@ echo "CUDA version: 13.2.0" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "Architectures: ${ARCHS}" >> "binaries/${SUBDIR}/VERSION.txt"
 echo "Build date: $(date -u +%Y-%m-%d)" >> "binaries/${SUBDIR}/VERSION.txt"
 
+# Smoke test: every binary must actually start and print --help. Catches
+# missing/broken shared libs (e.g. a binary that won't load at runtime)
+# before we ship it. Fail the build if any binary can't run.
+echo "=== smoke test (--help) ==="
+for b in llama-server llama-cli llama-bench; do
+  bin="binaries/${SUBDIR}/$b"
+  [ -x "$bin" ] || { echo "MISSING: $b"; exit 1; }
+  "$bin" --help >/dev/null 2>&1 || { echo "SMOKE FAIL: $b --help exited non-zero"; exit 1; }
+  echo "ok: $b"
+done
+
+# Capture --help output per binary for the release notes (fork features are
+# only discoverable from --help, so we attach it as a collapsible section).
+HELP="binaries/${SUBDIR}/HELP.txt"
+: > "$HELP"
+for b in llama-server llama-cli llama-bench; do
+  bin="binaries/${SUBDIR}/$b"
+  echo "### $b --help" >> "$HELP"
+  echo '```' >> "$HELP"
+  "$bin" --help >> "$HELP" 2>&1 || echo "(--help failed)" >> "$HELP"
+  echo '```' >> "$HELP"
+  echo >> "$HELP"
+done
+
 ls -lh "binaries/${SUBDIR}/"
 rm -rf src
