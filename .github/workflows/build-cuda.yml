@@ -283,9 +283,7 @@ jobs:
             notes_args=(--notes-file "$notes_file")
           else
             if [ "$name" = "vanilla" ]; then
-              notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).
-
-**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\` — download it once and place its \`.so\` files next to any fork's binaries. The llama-swap Docker image does NOT need it.")
+              notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).\n\n**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\` — download it once and place its \`.so\` files next to any fork's binaries. The llama-swap Docker image does NOT need it.")
             else
               notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
             fi
