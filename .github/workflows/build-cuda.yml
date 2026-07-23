@@ -313,6 +313,11 @@ jobs:
           GH_TOKEN: ${{ secrets.IMAGE_REPO_TOKEN }}
           MATRIX_JSON: ${{ needs.check-forks.outputs.matrix }}
         run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::IMAGE_REPO_TOKEN secret is not set — image auto-build cannot be triggered"
+            echo "::error::Create a GitHub PAT with 'workflow' scope and add it as IMAGE_REPO_TOKEN secret"
+            exit 1
+          fi
           TODAY=$(date -u +%Y-%m-%d)
           # Count releases published TODAY via JSON (reliable column parsing).
           COUNT=$(gh release list --repo "${{ github.repository }}" --limit 100 \
@@ -329,6 +334,9 @@ jobs:
             IMG_MODE=stable
           fi
           echo "Triggering image repo build (mode=$IMG_MODE, $COUNT releases available)"
-          gh workflow run build-image.yml \
+          if ! gh workflow run build-image.yml \
             --repo tayuLuc/llama-swap-cuda-images \
-            -f mode="$IMG_MODE" || echo "Image repo trigger skipped (token/permission missing)"
+            -f mode="$IMG_MODE"; then
+            echo "::error::IMAGE_REPO_TOKEN missing, expired, or insufficient — image auto-build not triggered"
+            exit 1
+          fi
