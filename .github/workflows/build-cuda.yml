@@ -291,6 +291,18 @@ jobs:
             extra_args+=("$cuda_asset")
             echo "  + CUDA runtime asset: $cuda_asset"
           fi
+          # Anchor the tag to a fresh empty commit (upstream #7). GitHub sorts
+          # /releases by the created_at of the tag's target commit, not by
+          # publish time. Tagging main HEAD - which barely moves - froze every
+          # release at the same created_at, so the /releases list stopped
+          # tracking recency and page 1 of the API stopped showing new builds.
+          # That is what made the image fetcher read a stale slice.
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "llama.cpp ${tag} (CUDA build $(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          git tag "$tag"
+          git push origin "refs/tags/${tag}"
+          echo "Publishing $tag (prerelease=$prerelease) from $f"
           gh release create "$tag" "$f" "${extra_args[@]}" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
