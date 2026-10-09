@@ -277,7 +277,10 @@ jobs:
           # Release notes. The vanilla release also ships a shared CUDA runtime
           # asset (handled below) for local, non-Docker use.
           if [ "$name" = "vanilla" ]; then
-            notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).\n\n**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\` — download it once and place its \`.so\` files next to any fork's binaries. The llama-swap Docker image does NOT need it.")
+            # $'...' not "...": bash does not expand \n inside double quotes, so the
+            # body was stored with a literal backslash-n and GitHub rendered it as
+            # one run-on paragraph. Confirmed on a live release body.
+            notes_args=(--notes $"CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).\n\n**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\` — download it once and place its \`.so\` files next to any fork's binaries. The llama-swap Docker image does NOT need it.")
           else
             notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
           fi
