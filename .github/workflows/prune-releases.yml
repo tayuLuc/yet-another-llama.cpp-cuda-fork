@@ -1,0 +1,50 @@
+# Keeps the release list readable: one stable + one nightly per fork.
+#
+# Without this the daily build accumulates up to 8 releases a day (4 forks x
+# stable+nightly), which is how the repo reached 255 releases over three months.
+# The fetcher only ever resolves the newest release per fork+mode by
+# published_at, so the older ones were pure list noise - but 255 of them also
+# made page 1 of the /releases API a misleading sample for anything reading it.
+#
+# Dry run by default inside this workflow too: KEEP_STABLE/KEEP_NIGHTLY can be
+# raised, and the script refuses to delete anything it cannot verify.
+
+name: Prune releases
+
+on:
+  schedule:
+    # 04:10 UTC - after the 00:00 build, so today's newest release exists before
+    # anything older is considered redundant.
+    - cron: '10 4 * * *'
+  workflow_dispatch:
+    inputs:
+      keep_stable:
+        description: stable releases to keep per fork
+        default: '1'
+        type: string
+      keep_nightly:
+        description: nightly releases to keep per fork
+        default: '1'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prune-releases
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Prune
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/prune-releases.sh --apply \
+            "${{ github.event.inputs.keep_stable || '1' }}" \
+            "${{ github.event.inputs.keep_nightly || '1' }}"

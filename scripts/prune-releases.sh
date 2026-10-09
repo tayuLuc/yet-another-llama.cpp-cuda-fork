@@ -73,7 +73,9 @@ for fork in $KEEP_NIGHTLY_FORKS; do
     echo "  ${fork}/${mode}: ${ntags} всего, оставляем ${keep}, удаляем ${drop}"
     i=0
     # Strip the trailing newline from $tags so the loop sees no phantom row.
-    echo "$tags" | while IFS= read -r tag; do
+    # Herestring, not a pipe: a piped while runs in a subshell and the counter
+    # below is lost, which reported "deleted 0" after deleting 247.
+    while IFS= read -r tag; do
       [ -n "$tag" ] || continue
       i=$((i + 1))
       [ "$i" -le "$keep" ] && continue
@@ -92,7 +94,7 @@ for fork in $KEEP_NIGHTLY_FORKS; do
         echo "      - $tag  (был бы удалён)"
         total=$((total + 1))
       fi
-    done
+    done <<< "$tags"
   done
 done
 
