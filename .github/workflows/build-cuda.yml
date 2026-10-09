@@ -106,7 +106,15 @@ jobs:
               echo "Fork $NAME: stable ref=$STABLE_REF unchanged (last=$LAST_STABLE)"
             fi
 
-            if [ -n "$NIGHTLY_REF" ] && { [ "$FORCE" = "true" ] || [ "$NIGHTLY_REF" != "$LAST_NIGHTLY" ]; }; then
+            if [ -n "$NIGHTLY_REF" ] && [ "$NIGHTLY_REF" = "$STABLE_REF" ]; then
+              # The branch HEAD is still the commit the latest release points at,
+              # so a nightly build would compile the exact same source as the
+              # stable one: MODE reaches build-inside.sh only as the "mode:" line
+              # of VERSION.txt, no cmake flag differs. The two tarballs differ by
+              # 0.1 MB. Skipping is what keeps a nightly release meaning "a commit
+              # that upstream has not released yet".
+              echo "Fork $NAME: nightly ref=$NIGHTLY_REF equals stable ref -> skipping nightly (nothing to add)"
+            elif [ -n "$NIGHTLY_REF" ] && { [ "$FORCE" = "true" ] || [ "$NIGHTLY_REF" != "$LAST_NIGHTLY" ]; }; then
               echo "Fork $NAME: nightly ref=$NIGHTLY_REF -> changed"
               ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
                       --arg mode "nightly" --arg ref "$NIGHTLY_REF" --arg reltag "" \
