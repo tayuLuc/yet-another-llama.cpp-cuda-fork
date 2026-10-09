@@ -157,14 +157,15 @@ jobs:
             ls -l binaries/ || true
             exit 1
           fi
+          # A blank line inside a double-quoted YAML scalar is what GitHub's
+          # parser rejects ("Unexpected value"), so the notes are built in one line.
+          NOTES="CUDA 13.4 (RTX 5090 / sm_120) build of **imp** ($mode) from ${sha}. Layout inside the tarball: ${subdir}/{imp-server,imp-cli,VERSION.txt}."
           prerelease_args=""
           [ "$mode" = "stable" ] || prerelease_args="--prerelease"
           echo "Publishing $tag from $f"
           gh release create "$tag" "$f" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
-            --notes "CUDA 13.4 (RTX 5090 / sm_120) build of **imp** ($mode) from \`${sha}\`.
-
-Layout inside the tarball: \`${subdir}/{imp-server,imp-cli,VERSION.txt}\`." \
+            --notes "$NOTES" \
             $prerelease_args
           gh release view "$tag" --repo "${{ github.repository }}" --json url -q .url
