@@ -36,5 +36,12 @@
       "subdir": "atomic",
       "note": "Fork of TheTom + Gemma4 MTP and Qwen3.6 NextN. Stable = latest release commit (targetCommitish, release binaries ignored); nightly = branch HEAD. We rebuild CUDA ourselves."
     }
-  ]
+  ],
+  "imp": {
+    "repo": "kekzl/imp",
+    "branch": "main",
+    "subdir": "imp",
+    "cuda_tag": "13.4.2-devel-ubuntu26.04",
+    "description": "imp is a separate engine, not a llama.cpp fork: built by its own CMake flags, not build-inside.sh."
+  }
 }
