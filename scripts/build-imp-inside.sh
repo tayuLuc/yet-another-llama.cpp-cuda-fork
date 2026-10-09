@@ -6,26 +6,26 @@
 # 13.2 for the forks. Env: IMP_REPO, REF, SUBDIR, MODE, ARCHS, CUDA_TAG.
 set -e
 
+# The Ubuntu index shipped malformed on 2026-09-16 (sections without a
+# "Package:" header) and made apt-get update fail; the imp Dockerfile pins the
+# mirror for the same reason. Kept because this is the same base image family.
+sed -i 's|archive.ubuntu.com|de.archive.ubuntu.com|g; s|security.ubuntu.com|de.archive.ubuntu.com|g' \
+    /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+rm -f /etc/apt/sources.list.d/cuda*.list
+
 apt-get update -qq
-# wget comes from the base image, not from apt's suggestion set, but the base
-# variant differs between toolkit tags - install it explicitly.
-apt-get install -y --no-install-recommends git ninja-build build-essential \
-    libssl-dev ca-certificates ccache lld wget
+# Exactly imp's own Dockerfile list: find_package() needs CURL, OpenSSL and JPEG,
+# python3 drives FetchContent, and liburing-dev is what compiles the io_uring
+# backend in - without it the shipped binary silently loses that backend.
+apt-get install -y --no-install-recommends \
+    g++ git ninja-build ca-certificates python3 ccache \
+    libcurl4-openssl-dev libjpeg-turbo8-dev liburing-dev
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
-# imp needs CMake 4.x (C++23 + CUDA 13); the distro package on this base is 3.x.
-# Pinned by digest exactly like the imp PLE CI does, so both lanes build with the
-# same cmake.
-CMAKE_SH=/tmp/cmake.sh
-wget -qO "$CMAKE_SH" https://github.com/Kitware/CMake/releases/download/v4.3.5/cmake-4.3.5-linux-x86_64.sh
-echo 'b48d919cf4dec27e594f9e0c227e48274e20238bcda8b4b471a94f9099cccd83  /tmp/cmake.sh' | sha256sum -c -
-sh "$CMAKE_SH" --skip-license --prefix=/usr/local
-cmake --version
-
 # Preflight: a missing tool otherwise surfaces five minutes into a container run.
 missing=""
-for t in git cmake ninja ccache strip objdump wget; do
+for t in git cmake ninja ccache strip objdump python3; do
   command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
 done
 if [ -n "$missing" ]; then
