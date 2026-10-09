@@ -1,146 +1,81 @@
-# llama.cpp CUDA Builds
+# yet-another-llama.cpp-cuda-fork
 
-This repository automatically builds [llama.cpp](https://github.com/ggml-org/llama.cpp) with CUDA support for multiple NVIDIA GPU architectures and CUDA versions.
+Builds **4 llama.cpp forks** for **CUDA 13.2 / RTX 5090 (sm_120)**, amd64 only:
 
-## Why This Repository?
+| Fork        | Source repo                              |
+|-------------|------------------------------------------|
+| vanilla     | `ggml-org/llama.cpp`                     |
+| turboquant  | `TheTom/llama-cpp-turboquant`            |
+| atomic      | `AtomicBot-ai/atomic-llama-cpp-turboquant` |
+| prism       | `PrismML-Eng/llama.cpp`                  |
 
-The official llama.cpp repository does not provide pre-built CUDA binaries. This repository fills that gap by:
+Built binaries are published as GitHub Releases; a downstream repo
+([`llama-swap-cuda-images`](https://github.com/tayuLuc/llama-swap-cuda-images))
+packs all four into a single Docker image with `llama-swap` in front.
 
-- Building llama.cpp with CUDA support for multiple CUDA toolkit versions
-- Supporting a wide range of NVIDIA GPU architectures (compute capability 7.5+)
-- Automatically tracking upstream llama.cpp releases
-- Providing ready-to-use binaries via GitHub releases
+## What gets built
 
-## Supported Configurations
+For every fork we detect **two independent sources** and emit one release each:
 
-### CUDA Versions
-- CUDA 12.8
+- **stable** — latest GitHub Release of the fork (we only use its source commit,
+  never the released binaries). The SHA comes from `VERSION.txt` (`ref:` field)
+  inside the fork build.
+- **nightly** — HEAD commit of the fork's tracked branch.
 
-### Host CPU Architectures
+So up to **8 releases** per run (4 forks × 2 modes). Each release contains
+`llama-server`, `llama-cli`, `llama-bench`, and `VERSION.txt`.
 
-Each release publishes one tarball per host CPU architecture:
+The CUDA runtime `.so` libraries (`libcudart`, `libcublas`, `libcublasLt`) are
+**not** bundled inside fork tarballs. Instead, the **vanilla** release also
+ships a single shared asset `cuda-runtime-13.2-amd64.tar.gz` — download it once
+and place its `.so` files next to any fork's binaries (or set
+`LD_LIBRARY_PATH`) for local, non-Docker use. The llama-swap Docker image does
+not need it: its base `nvidia/cuda:13.2-runtime` already provides CUDA.
 
-| Suffix | Linux platform | Typical hosts |
-|--------|----------------|---------------|
-| `-amd64` | x86_64 | Most desktops, servers, cloud VMs |
-| `-arm64` | aarch64 | Grace Hopper, Grace Blackwell, DGX Spark, Ampere Altra |
+## Release tag scheme
 
-The CUDA compute capabilities below target the runtime GPU and are the same on both host architectures.
-
-### GPU Architectures
-
-| Compute Capability | GPU Examples |
-|-------------------|--------------|
-| 6.1 | Titan XP, Tesla P40, GTX 10xx |
-| 7.0 | Tesla V100 |
-| 7.5 | Tesla T4, RTX 2000 series, Quadro RTX |
-| 8.0 | A100 |
-| 8.6 | RTX 3000 series |
-| 8.9 | RTX 4000 series, L4, L40 |
-| 9.0 | H100, H200, GH200 |
-| 10.0 | B200, GB200 |
-| 12.0 | RTX Pro series, RTX 5000 series |
-
-## Usage
-
-### Download
-
-1. Go to the [Releases](../../releases) page
-2. Download the tarball matching your host CPU architecture — `-amd64` for x86_64, `-arm64` for aarch64. Filename format: `llama.cpp-bXXXX-cuda-<cuda>-<arch>.tar.gz`
-3. Extract the archive:
-
-```bash
-# x86_64 host
-tar -xzf llama.cpp-bXXXX-cuda-12.8-amd64.tar.gz
-# aarch64 host (e.g. Grace Blackwell, DGX Spark)
-tar -xzf llama.cpp-bXXXX-cuda-12.8-arm64.tar.gz
-cd cuda-12.8
+```
+<fork>-<sha12>              # stable, e.g. vanilla-571d0d540df0
+<fork>-nightly-<sha12>      # nightly (prerelease), e.g. vanilla-nightly-571d0d540df0
 ```
 
-### Run
+## How it works
 
-The extracted directory contains all llama.cpp binaries:
+`build-cuda.yml` runs three stages:
 
-```bash
-# Run the main CLI
-./llama-cli --help
+1. **`check-forks`** — reads `forks.json` and builds a matrix of fork × mode.
+   Each item carries the resolved source commit (`ref`), the release tag to
+   publish, and the subdir the binaries land in.
+2. **`build`** — 8 parallel jobs. Each runs `scripts/build-inside.sh` inside
+   `nvidia/cuda:13.2.0-cudnn-devel-ubuntu24.04` with:
+   - UI disabled (`-DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_WEBUI=OFF`)
+    - CUDA on, architectures from `forks.json` (`75-virtual;80-virtual;86-virtual;89-virtual;90-virtual;100-virtual;120` — PTX for 7.5–10.0, SASS for 12.0 / RTX 5090)
+   - ccache for incremental rebuilds
+   Each job publishes its own release on success, **independently** — a failure
+   in one fork does not block the others.
+3. **`trigger-swap`** — runs after all builds (`if: always()`). If at least one
+   release was published today, it fires `workflow_dispatch` on
+   `llama-swap-cuda-images` with `mode=stable|nightly` (nightly if any matrix
+   item is nightly), which builds and pushes the combined Docker image to GHCR.
 
-# Run the server
-./llama-server --help
+## Triggers
 
-# Other utilities
-./llama-bench
-./llama-quantize
-./llama-embedding
+- `workflow_dispatch` with `force_build` (build all forks regardless of change)
+- daily `schedule` (catches new releases / branch moves)
+
+## Layout
+
+```
+forks.json                 # source of truth: which forks/branches to build
+scripts/build-inside.sh    # the actual cmake + build + packaging steps
+.github/workflows/build-cuda.yml
 ```
 
-### Check Version
+## System requirements (runtime)
 
-Each release includes a `VERSION.txt` file with build information:
-
-```bash
-cat VERSION.txt
-```
-
-## System Requirements
-
-- NVIDIA GPU with compute capability 7.5 or higher
-- Appropriate NVIDIA driver for your CUDA version:
-  - CUDA 12.8+: Driver >= 570.15
-- Linux x86_64 or aarch64 (Ubuntu 22.04 compatible)
-
-## Build Process
-
-Builds are triggered automatically:
-- Daily at 00:00 UTC
-- Only if a new llama.cpp release is detected
-- Can be manually triggered via GitHub Actions
-
-Each build:
-1. Checks for new llama.cpp releases
-2. Clones llama.cpp at the exact release commit
-3. Builds with CMake using CUDA Docker images
-4. Packages binaries for each CUDA version
-5. Creates a GitHub release with all build artifacts
-
-## Choosing Your CUDA Version
-
-Select based on:
-1. **Your GPU architecture** - Blackwell GPUs require CUDA 12.8+
-2. **Your installed CUDA toolkit** - Match the version if possible
-3. **Your NVIDIA driver** - Ensure your driver supports the CUDA version
-
-If unsure, CUDA 12.6.3 offers the widest compatibility with modern GPUs (except Blackwell).
-
-## Manual Building
-
-If you need a custom build:
-
-```bash
-git clone https://github.com/ai-dock/llama.cpp-cuda
-cd llama.cpp-cuda
-
-# Edit .github/workflows/build-cuda.yml to customize architectures or CUDA versions
-# Then trigger a manual workflow run
-```
-
-## License
-
-This repository contains build scripts only. The llama.cpp binaries are subject to the [llama.cpp MIT License](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE).
-
-## Links
-
-- **Upstream llama.cpp**: https://github.com/ggml-org/llama.cpp
-- **CUDA Toolkit**: https://developer.nvidia.com/cuda-toolkit
-- **NVIDIA Driver Downloads**: https://www.nvidia.com/download/index.aspx
-
-## Support
-
-For issues with:
-- **Build process or binaries**: Open an issue in this repository
-- **llama.cpp functionality**: Open an issue in the [upstream repository](https://github.com/ggml-org/llama.cpp/issues)
-
-## Credits
-
-- [llama.cpp](https://github.com/ggml-org/llama.cpp) by Georgi Gerganov and contributors
-- Built and maintained by [ai-dock](https://github.com/ai-dock)
+- NVIDIA GPU, compute capability **7.5+** (12.0 for RTX 5090)
+- **NVIDIA driver >= 580.13** (CUDA 13.2)
+- Linux x86_64. For local (non-Docker) use, grab `cuda-runtime-13.2-amd64.tar.gz`
+  from the **vanilla** release and place its `.so` files beside the binaries
+  (or `export LD_LIBRARY_PATH=…`). No full CUDA toolkit required — just the
+  driver. The llama-swap Docker image provides CUDA via its base image.

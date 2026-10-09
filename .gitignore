@@ -1,25 +1,17 @@
 # Build artifacts
 binaries/
-artifacts/
-release-assets/
-*.tar.gz
-*.zip
+local-build/
+test-build/
+.ccache/
 
-# llama.cpp clone
+# Source clones
 llama.cpp/
 
-# Logs
-*.log
+# Tarballs (released via GitHub, not committed)
+*.tar.gz
 
-# OS files
+# OS / editor
 .DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
 *.swp
-*.swo
-*~
-
-SETUP-CHECKLIST.md
+.idea/
+.vscode/

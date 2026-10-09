@@ -1,0 +1,40 @@
+{
+  "cuda_version": "13.2.0",
+  "cuda_version_short": "13.2",
+  "cuda_tag": "13.2.0-cudnn-devel-ubuntu24.04",
+  "architectures": "75-virtual;80-virtual;86-virtual;89-virtual;90-virtual;100-virtual;120",
+  "forks": [
+    {
+      "name": "vanilla",
+      "repo": "ggml-org/llama.cpp",
+      "branch": "master",
+      "track": "release",
+      "subdir": "vanilla",
+      "note": "Upstream ggml-org/llama.cpp. Stable = latest release tag (bXXXX); nightly = master HEAD."
+    },
+    {
+      "name": "turboquant",
+      "repo": "TheTom/llama-cpp-turboquant",
+      "branch": "feature/turboquant-kv-cache",
+      "track": "release",
+      "subdir": "turboquant",
+      "note": "TurboQuant+ KV/weight quantization. Stable = latest release (tqp-vX.Y.Z, targetCommitish is a branch -> resolved to SHA); nightly = branch HEAD."
+    },
+    {
+      "name": "prism",
+      "repo": "PrismML-Eng/llama.cpp",
+      "branch": "prism",
+      "track": "release",
+      "subdir": "prism",
+      "note": "Adds Q2_0 ternary quantization (Bonsai models). Stable = latest release (prism-bXXXX-<sha>); nightly = prism branch HEAD."
+    },
+    {
+      "name": "atomic",
+      "repo": "AtomicBot-ai/atomic-llama-cpp-turboquant",
+      "branch": "feature/turboquant-kv-cache",
+      "track": "release",
+      "subdir": "atomic",
+      "note": "Fork of TheTom + Gemma4 MTP and Qwen3.6 NextN. Stable = latest release commit (targetCommitish, release binaries ignored); nightly = branch HEAD. We rebuild CUDA ourselves."
+    }
+  ]
+}

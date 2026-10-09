@@ -1,290 +1,341 @@
-name: Build llama.cpp with CUDA
+name: Build llama.cpp forks with CUDA
 
+# Best-of-all multi-fork CUDA builder.
+# Builds 4 llama.cpp forks for CUDA 13.2 (RTX 5090 / sm_120 + all prior gens), amd64 only:
+#   - vanilla      : ggml-org/llama.cpp
+#   - turboquant   : TheTom/llama-cpp-turboquant
+#   - atomic       : AtomicBot-ai/atomic-llama-cpp-turboquant
+#   - prism        : PrismML-Eng/llama.cpp
+# For EVERY fork we detect TWO independent sources and emit up to two release builds:
+#   - stable : latest GitHub release of the fork (prerelease releases are treated as
+#              releases too — we only need the source commit, never the release binaries).
+#   - nightly: HEAD commit of the fork's tracked branch.
+# Binaries land in separate subdirs so they never collide: cuda-13.2/<subdir>/llama-server.
+# Source of truth for what to build: forks.json (committed in repo).
 on:
   schedule:
-    # Run daily at 00:00 UTC
+    # Daily at 00:00 UTC — catches new releases and branch moves.
     - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       force_build:
-        description: 'Force build even if no new release'
+        description: 'Force build all forks (stable+nightly) even if unchanged'
         required: false
         type: boolean
         default: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  check-release:
+  check-forks:
     runs-on: ubuntu-latest
     outputs:
-      should_build: ${{ steps.check.outputs.should_build }}
-      release_tag: ${{ steps.check.outputs.release_tag }}
-      release_hash: ${{ steps.check.outputs.release_hash }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Check for new llama.cpp release
-        id: check
+      # Restore last-built refs from Actions cache (one key per fork+mode).
+      # Cache TTL is set in repo Settings > Actions > General > Cache
+      # (public repos cap at 7 days; self-hosted/paid can raise it).
+      - name: Restore last-built refs (cache)
+        id: restore-refs
+        uses: actions/cache@v6
+        with:
+          path: .cache-refs
+          key: fork-refs-v2-${{ github.run_id }}
+          restore-keys: |
+            fork-refs-v2-
+
+      - name: Plan which forks changed
+        id: plan
         run: |
-          # Get latest release from llama.cpp
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r '.tag_name')
-          RELEASE_HASH=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r '.target_commitish')
-          
-          echo "Latest llama.cpp release: $LATEST_RELEASE"
-          echo "Release hash: $RELEASE_HASH"
-          
-          # Check if we've already built this release
-          if git tag | grep -q "^${LATEST_RELEASE}$"; then
-            echo "Release $LATEST_RELEASE already built"
-            if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
-              echo "Force build enabled, building anyway"
-              echo "should_build=true" >> $GITHUB_OUTPUT
+          FORCE="${{ github.event.inputs.force_build }}"
+
+          COUNT=$(jq '.forks | length' forks.json)
+          ARCHS=$(jq -r '.architectures' forks.json)
+          MATRIX_ITEMS="[]"
+
+          for i in $(seq 0 $((COUNT-1))); do
+            NAME=$(jq -r ".forks[$i].name" forks.json)
+            REPO=$(jq -r ".forks[$i].repo" forks.json)
+            BRANCH=$(jq -r ".forks[$i].branch // \"\"" forks.json)
+            SUBDIR=$(jq -r ".forks[$i].subdir" forks.json)
+
+            # ---- STABLE: latest release (prerelease releases count as releases) ----
+            REL=$(curl -s "https://api.github.com/repos/${REPO}/releases" | jq -r '.[0] // empty')
+            if [ -n "$REL" ]; then
+              REL_TAG=$(echo "$REL" | jq -r '.tag_name')
+              REL_PRE=$(echo "$REL" | jq -r '.prerelease')
+              REL_REF=$(echo "$REL" | jq -r '.target_commitish')
+              # target_commitish may be a branch name (e.g. turboquant) -> resolve to SHA
+              if ! echo "$REL_REF" | grep -qE '^[0-9a-f]{40}$'; then
+                REL_REF=$(curl -s "https://api.github.com/repos/${REPO}/commits/${REL_REF}" | jq -r '.sha')
+              fi
+              STABLE_REF="$REL_REF"
+              STABLE_TAG="$REL_TAG"
+              STABLE_PRE="$REL_PRE"
             else
-              echo "should_build=false" >> $GITHUB_OUTPUT
+              STABLE_REF=""
+              STABLE_TAG=""
+              STABLE_PRE="false"
             fi
-          else
-            echo "New release detected: $LATEST_RELEASE"
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "release_tag=$LATEST_RELEASE" >> $GITHUB_OUTPUT
-          echo "release_hash=$RELEASE_HASH" >> $GITHUB_OUTPUT
+
+            # ---- NIGHTLY: HEAD of tracked branch (only if a branch is configured) ----
+            if [ -n "$BRANCH" ]; then
+              NIGHTLY_REF=$(curl -s "https://api.github.com/repos/${REPO}/commits/${BRANCH}" | jq -r '.sha')
+            else
+              NIGHTLY_REF=""
+            fi
+
+            # ---- Emit matrix items, comparing against last-built refs ----
+            LAST_STABLE=$(cat ".cache-refs/${NAME}-stable.txt" 2>/dev/null || echo "")
+            LAST_NIGHTLY=$(cat ".cache-refs/${NAME}-nightly.txt" 2>/dev/null || echo "")
+
+            if [ -n "$STABLE_REF" ] && { [ "$FORCE" = "true" ] || [ "$STABLE_REF" != "$LAST_STABLE" ]; }; then
+              echo "Fork $NAME: stable ref=$STABLE_REF (tag=$STABLE_TAG, prerelease=$STABLE_PRE) -> changed"
+              ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
+                      --arg mode "stable" --arg ref "$STABLE_REF" --arg reltag "$STABLE_TAG" \
+                      --arg pre "$STABLE_PRE" --arg subdir "$SUBDIR" --arg arch "$ARCHS" \
+                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir, architectures:$arch}')
+              MATRIX_ITEMS=$(echo "$MATRIX_ITEMS" | jq --argjson it "$ITEM" '. + [$it]')
+            else
+              echo "Fork $NAME: stable ref=$STABLE_REF unchanged (last=$LAST_STABLE)"
+            fi
+
+            if [ -n "$NIGHTLY_REF" ] && { [ "$FORCE" = "true" ] || [ "$NIGHTLY_REF" != "$LAST_NIGHTLY" ]; }; then
+              echo "Fork $NAME: nightly ref=$NIGHTLY_REF -> changed"
+              ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
+                      --arg mode "nightly" --arg ref "$NIGHTLY_REF" --arg reltag "" \
+                      --arg pre "true" --arg subdir "$SUBDIR" --arg arch "$ARCHS" \
+                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir, architectures:$arch}')
+              MATRIX_ITEMS=$(echo "$MATRIX_ITEMS" | jq --argjson it "$ITEM" '. + [$it]')
+            else
+              echo "Fork $NAME: nightly ref=$NIGHTLY_REF unchanged (last=$LAST_NIGHTLY)"
+            fi
+          done
+
+          echo "matrix=$(echo "$MATRIX_ITEMS" | jq -c '{include: .}')" >> $GITHUB_OUTPUT
 
   build:
-    needs: check-release
-    if: needs.check-release.outputs.should_build == 'true'
-    runs-on: ${{ matrix.arch.runs_on }}
+    needs: check-forks
+    if: needs.check-forks.outputs.matrix != '{"include":[]}'
+    runs-on: ubuntu-latest   # amd64 only (RTX 5090 host)
+    permissions:
+      contents: write   # needed to publish per-fork releases via gh
     strategy:
       fail-fast: false
-      matrix:
-        cuda_version: ['12.8.1']
-        arch:
-          # Native runners — no QEMU. nvidia/cuda:*-cudnn-devel-ubuntu22.04 is
-          # multi-arch on Docker Hub so the same build path runs on both.
-          - { suffix: amd64, runs_on: ubuntu-latest }
-          - { suffix: arm64, runs_on: ubuntu-24.04-arm }
-        include:
-          - cuda_version: '12.8.1'
-            cuda_version_short: '12.8'
-            cuda_tag: '12.8.1-cudnn-devel-ubuntu22.04'
-            # CUDA compute capabilities target the runtime GPU, not the host
-            # CPU arch, so the same list applies to both amd64 and arm64
-            # builds. Relevant aarch64 GPU contexts (Grace Hopper, Grace
-            # Blackwell, DGX Spark) are covered by sm_90 / sm_100 / sm_120.
-            architectures: '75-virtual;80-virtual;86-virtual;89-virtual;90-virtual;100-virtual;120-virtual'
-    
+      matrix: ${{ fromJson(needs.check-forks.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      # Skip the build entirely if a release with this exact fork+sha tag
+      # already exists — no point burning 40-60 min rebuilding identical binaries.
+      - name: Check if release already exists
+        id: chk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FORCE="${{ github.event.inputs.force_build }}"
+          SHA12="${{ matrix.ref }}"
+          SHA12="${SHA12:0:12}"
+          if [ "${{ matrix.mode }}" = "stable" ]; then
+            TAG="${{ matrix.name }}-${SHA12}"
+          else
+            TAG="${{ matrix.name }}-nightly-${SHA12}"
+          fi
+          echo "Checking for existing release: $TAG (force_build=$FORCE)"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            if [ "$FORCE" = "true" ]; then
+              # Force rebuild: drop the existing release AND its tag so the
+              # later `gh release create` can reuse the same tag.
+              echo "force_build: deleting existing $TAG to rebuild"
+              gh release delete "$TAG" --repo "${{ github.repository }}" --yes >/dev/null 2>&1 || true
+              gh api -X DELETE "/repos/${{ github.repository }}/git/refs/tags/${TAG}" >/dev/null 2>&1 || true
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "Release $TAG already exists — skipping build."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Maximize build space
         run: |
           echo "=== Initial Disk Space ==="
           df -h
-          
-          echo "=== Removing unnecessary packages ==="
-          sudo apt-get remove -y '^aspnetcore-.*' || true
-          sudo apt-get remove -y '^dotnet-.*' --fix-missing || true
-          sudo apt-get remove -y '^llvm-.*' --fix-missing || true
-          sudo apt-get remove -y 'php.*' --fix-missing || true
-          sudo apt-get remove -y '^mongodb-.*' --fix-missing || true
-          sudo apt-get remove -y '^mysql-.*' --fix-missing || true
-          sudo apt-get remove -y azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing || true
+          sudo apt-get remove -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' \
+            azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing || true
           sudo apt-get autoremove -y || true
           sudo apt-get clean || true
-          
-          echo "=== Removing large directories ==="
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          
-          # Clean docker system
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost /usr/share/swift /usr/local/.ghcup "$AGENT_TOOLSDIRECTORY"
           docker system prune -af || true
-          
           echo "=== After Cleanup ==="
           df -h
 
-      - name: Build llama.cpp with CUDA
+      - name: Setup Compiler Cache (ccache)
+        uses: actions/cache@v6
+        with:
+          path: .ccache
+          key: ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.mode }}-${{ matrix.ref }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.mode }}-
+
+      - name: Build ${{ matrix.name }} (${{ matrix.mode }}) with CUDA
+        if: steps.chk.outputs.skip != 'true'
+        env:
+          CUDA_TAG: '13.2.0-cudnn-devel-ubuntu24.04'
+          ARCHS: ${{ matrix.architectures }}
+          SUBDIR: ${{ matrix.subdir }}
+          REPO: ${{ matrix.repo }}
+          BRANCH: ${{ matrix.branch }}
+          REF: ${{ matrix.ref }}
+          RELTAG: ${{ matrix.reltag }}
+          MODE: ${{ matrix.mode }}
         run: |
-          # Pull Docker image
-          docker pull nvidia/cuda:${{ matrix.cuda_tag }}
-          
-          # Run build in container
+          mkdir -p $PWD/.ccache
+          docker pull nvidia/cuda:${CUDA_TAG}
           docker run --rm \
             -v $PWD:/workspace \
-            nvidia/cuda:${{ matrix.cuda_tag }} \
-            bash -c "
-              set -e
-              
-              echo '=== Installing minimal dependencies ==='
-              apt-get update -qq
-              apt-get install -y --no-install-recommends git cmake ninja-build build-essential libssl-dev ca-certificates
-              apt-get clean
-              rm -rf /var/lib/apt/lists/*
-              
-              echo '=== Cloning llama.cpp ==='
-              cd /workspace
-              git clone --depth 1 --branch ${{ needs.check-release.outputs.release_tag }} https://github.com/ggml-org/llama.cpp.git || \
-                (git clone https://github.com/ggml-org/llama.cpp.git && cd llama.cpp && git checkout ${{ needs.check-release.outputs.release_hash }})
-              cd llama.cpp
-              
-              echo '=== Configuring build with Ninja ==='
-              export LIBRARY_PATH="/usr/local/cuda/lib64/stubs${LIBRARY_PATH:+:$LIBRARY_PATH}"
+            -v $PWD/.ccache:/root/.ccache \
+            -e CCACHE_DIR=/root/.ccache \
+            -e REPO="${REPO}" \
+            -e BRANCH="${BRANCH}" \
+            -e REF="${REF}" \
+            -e RELTAG="${RELTAG}" \
+            -e MODE="${MODE}" \
+            -e SUBDIR="${SUBDIR}" \
+            -e ARCHS="${ARCHS}" \
+            nvidia/cuda:${CUDA_TAG} \
+            bash /workspace/scripts/build-inside.sh
 
-              ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
-              cmake -B build -S . \
-                -G Ninja \
-                -DGGML_CUDA=ON \
-                -DCMAKE_CUDA_ARCHITECTURES='${{ matrix.architectures }}' \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DBUILD_SHARED_LIBS=ON \
-                -DGGML_NATIVE=OFF \
-                -DLLAMA_BUILD_TESTS=OFF \
-                -DLLAMA_BUILD_EXAMPLES=OFF \
-                -DCMAKE_EXE_LINKER_FLAGS='-Wl,-rpath-link,/usr/local/cuda/lib64/stubs' \
-                -DCMAKE_SHARED_LINKER_FLAGS='-Wl,-rpath-link,/usr/local/cuda/lib64/stubs'
-              
-              echo '=== Building with Ninja (parallel: all cores) ==='
-              cmake --build build --config Release -j\$(nproc)
-              
-              echo '=== Copying binaries ==='
-              cd /workspace
-              mkdir -p binaries/cuda-${{ matrix.cuda_version_short }}
-
-              # Copy everything from build/bin
-              cp -r llama.cpp/build/bin/* binaries/cuda-${{ matrix.cuda_version_short }}/
-
-              # Strip binaries to reduce size (executables only, not .so files)
-              find binaries/cuda-${{ matrix.cuda_version_short }}/ -type f -executable ! -name "*.so*" -exec strip {} \; 2>/dev/null || true
-
-              echo '=== Creating version info ==='
-              echo 'llama.cpp version: ${{ needs.check-release.outputs.release_tag }}' > binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
-              echo 'CUDA version: ${{ matrix.cuda_version }}' >> binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
-              echo 'Architectures: ${{ matrix.architectures }}' >> binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
-              echo 'Build date: '$(date -u +%Y-%m-%d) >> binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
-              echo 'Build hash: ${{ needs.check-release.outputs.release_hash }}' >> binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
-
-              echo '=== Build complete ==='
-              ls -lh binaries/cuda-${{ matrix.cuda_version_short }}/
-              
-              echo '=== Cleaning up build directory ==='
-              rm -rf llama.cpp
-            "
-          
-          # Remove Docker image to free space
-          docker rmi nvidia/cuda:${{ matrix.cuda_tag }} || true
-          
-          # Fix permissions for files created by root in container
+          docker rmi nvidia/cuda:${CUDA_TAG} || true
           sudo chown -R $(id -u):$(id -g) $PWD
-          
-          echo "=== Final disk usage ==="
           df -h
 
       - name: Create tarball
+        if: steps.chk.outputs.skip != 'true'
         run: |
           cd binaries
-          tar -czf llama.cpp-${{ needs.check-release.outputs.release_tag }}-cuda-${{ matrix.cuda_version_short }}-${{ matrix.arch.suffix }}.tar.gz cuda-${{ matrix.cuda_version_short }}
+          tar -czf llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64.tar.gz ${{ matrix.subdir }}
           ls -lh *.tar.gz
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        if: steps.chk.outputs.skip != 'true'
+        uses: actions/upload-artifact@v7
         with:
-          # Arch suffix in the artifact name so the matrix jobs do not collide
-          # in actions/download-artifact later.
-          name: llama.cpp-cuda-${{ matrix.cuda_version_short }}-${{ matrix.arch.suffix }}
+          name: llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64
           path: binaries/*.tar.gz
           retention-days: 1
 
-  release:
-    needs: [check-release, build]
+      - name: Write built ref
+        run: |
+          mkdir -p .cache-refs
+          echo "${{ matrix.ref }}" > ".cache-refs/${{ matrix.name }}-${{ matrix.mode }}.txt"
+
+      # Save all fork refs; check-forks restores via restore-keys "fork-refs-v2-".
+      - name: Save built refs to cache
+        uses: actions/cache@v6
+        with:
+          path: .cache-refs
+          key: fork-refs-v2-${{ github.run_id }}-${{ matrix.name }}-${{ matrix.mode }}
+          restore-keys: |
+            fork-refs-v2-
+          save-always: true
+
+      # Publish THIS fork's release immediately on success — independent of other
+      # matrix jobs, so a failure elsewhere doesn't block or skip this publish.
+      - name: Publish per-fork release
+        if: success() && steps.chk.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="${{ matrix.name }}"
+          mode="${{ matrix.mode }}"
+          sha="${{ matrix.ref }}"
+          sha12="${sha:0:12}"
+          # Explicit tarball path (do NOT glob binaries/*.tar.gz — the CUDA
+          # asset would sort before the fork tarball and break parsing).
+          f="binaries/llama.cpp-cuda-13.2-${name}-${mode}-amd64.tar.gz"
+          if [ ! -f "$f" ]; then
+            echo "FATAL: built tarball missing: $f"
+            exit 1
+          fi
+          if [ "$mode" = "stable" ]; then
+            tag="${name}-${sha12}"
+            prerelease="false"
+          else
+            tag="${name}-nightly-${sha12}"
+            prerelease="true"
+          fi
+          # Release notes. The vanilla release also ships a shared CUDA runtime
+          # asset (handled below) for local, non-Docker use.
+          if [ "$name" = "vanilla" ]; then
+            notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).\n\n**Local (non-Docker) use:** this release also ships \`cuda-runtime-13.2-amd64.tar.gz\` — download it once and place its \`.so\` files next to any fork's binaries. The llama-swap Docker image does NOT need it.")
+          else
+            notes_args=(--notes "CUDA 13.2 (RTX 5090 / sm_120) build of **$name** ($mode).")
+          fi
+          # The vanilla release also carries the shared CUDA runtime asset
+          # (built into cuda-asset/, outside binaries/) so local users on a
+          # bare OS can grab the .so's once. Other forks do not bundle it; the
+          # swap image gets CUDA from its nvidia/cuda:runtime base instead.
+          extra_args=()
+          if [ "$name" = "vanilla" ] && ls cuda-asset/cuda-runtime-*.tar.gz >/dev/null 2>&1; then
+            cuda_asset=$(ls cuda-asset/cuda-runtime-*.tar.gz | head -1)
+            extra_args+=("$cuda_asset")
+            echo "  + CUDA runtime asset: $cuda_asset"
+          fi
+          gh release create "$tag" "$f" "${extra_args[@]}" \
+            --repo "${{ github.repository }}" \
+            --title "$tag" \
+            "${notes_args[@]}" \
+            $( [ "$prerelease" = "true" ] && echo "--prerelease" )
+
+  # Trigger the swap-image build ONLY after ALL parallel builds finish.
+  # if: always() so it runs even if some builds failed; guarded below so it
+  # only fires when at least one release was actually published today.
+  trigger-swap:
+    needs: [build, check-forks]
+    if: always()
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          # Full history + tags so the tag push below is a fast-forward and
-          # duplicate tags are visible.
-          fetch-depth: 0
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Prepare release assets
+      - name: Trigger image repo build
+        env:
+          GH_TOKEN: ${{ secrets.IMAGE_REPO_TOKEN }}
+          MATRIX_JSON: ${{ needs.check-forks.outputs.matrix }}
         run: |
-          mkdir -p release-assets
-          find artifacts -name "*.tar.gz" -exec cp {} release-assets/ \;
-          ls -lh release-assets/
-
-      - name: Create advancing release tag
-        # GitHub sorts the /releases list by each release's created_at, which is
-        # the *committer date of the tag's target commit* — not the publish
-        # time. Previously softprops/action-gh-release created every tag at the
-        # static main HEAD (unchanged since May 2026), so every release reported
-        # the same created_at and the /releases list stopped reflecting recency:
-        # API consumers polling the first page never saw newer builds. Anchor
-        # each tag to a fresh empty commit whose committer date is build time so
-        # created_at advances and new releases sort to the top of the list.
-        # The commit is reachable only via its tag; main is never pushed.
-        run: |
-          set -euo pipefail
-          TAG="${{ needs.check-release.outputs.release_tag }}"
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty \
-            -m "llama.cpp ${TAG} (CUDA build $(date -u +%Y-%m-%dT%H:%M:%SZ))"
-          git tag "${TAG}"
-          git push origin "refs/tags/${TAG}"
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ needs.check-release.outputs.release_tag }}
-          name: llama.cpp ${{ needs.check-release.outputs.release_tag }} with CUDA
-          body: |
-            # llama.cpp ${{ needs.check-release.outputs.release_tag }} with CUDA Support
-            
-            Pre-built binaries of llama.cpp with CUDA support for multiple CUDA versions.
-            
-            **Source:** https://github.com/ggml-org/llama.cpp/releases/tag/${{ needs.check-release.outputs.release_tag }}
-            **Commit:** ${{ needs.check-release.outputs.release_hash }}
-            
-            ## CUDA Versions
-            - CUDA 12.8 - GPU compute capabilities: 7.5, 8.0, 8.6, 8.9, 9.0, 10.0, 12.0
-
-            ## Host architectures
-            Tarballs are published per host CPU architecture (Linux):
-            - `-amd64.tar.gz` — x86_64 (most desktops, servers, cloud VMs)
-            - `-arm64.tar.gz` — aarch64 (Grace Hopper / Grace Blackwell / DGX Spark / Ampere Altra)
-
-            ## GPU compute capability reference
-            - 7.5: Tesla T4, RTX 20xx series, Quadro RTX
-            - 8.0: A100
-            - 8.6: RTX 3000 series
-            - 8.9: RTX 4000 series, L4, L40
-            - 9.0: H100, H200, GH200
-            - 10.0: B200, GB200
-            - 12.0: RTX Pro series, RTX 50xx
-
-            ## Usage
-            Download the tarball matching your host CPU arch and CUDA version, then extract:
-            ```bash
-            # amd64 host
-            tar -xzf llama.cpp-${{ needs.check-release.outputs.release_tag }}-cuda-12.8-amd64.tar.gz
-            # arm64 host (e.g. Grace Blackwell)
-            tar -xzf llama.cpp-${{ needs.check-release.outputs.release_tag }}-cuda-12.8-arm64.tar.gz
-            ./llama-cli --help
-            ```
-          files: release-assets/*
-          draft: false
-          prerelease: false
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::IMAGE_REPO_TOKEN secret is not set — image auto-build cannot be triggered"
+            echo "::error::Create a GitHub PAT with 'workflow' scope and add it as IMAGE_REPO_TOKEN secret"
+            exit 1
+          fi
+          TODAY=$(date -u +%Y-%m-%d)
+          # Count releases published TODAY via JSON (reliable column parsing).
+          COUNT=$(gh release list --repo "${{ github.repository }}" --limit 100 \
+            --json publishedAt \
+            | jq --arg d "$TODAY" '[.[] | select(.publishedAt | startswith($d))] | length')
+          if [ "${COUNT:-0}" -eq 0 ]; then
+            echo "No successful releases today — skipping image repo trigger."
+            exit 0
+          fi
+          # Pick mode: nightly if any matrix item is nightly, else stable.
+          if echo "$MATRIX_JSON" | jq -e '.include | any(.mode == "nightly")' >/dev/null 2>&1; then
+            IMG_MODE=nightly
+          else
+            IMG_MODE=stable
+          fi
+          echo "Triggering image repo build (mode=$IMG_MODE, $COUNT releases available)"
+          if ! gh workflow run build-image.yml \
+            --repo tayuLuc/llama-swap-cuda-images \
+            -f mode="$IMG_MODE"; then
+            echo "::error::IMAGE_REPO_TOKEN missing, expired, or insufficient — image auto-build not triggered"
+            exit 1
+          fi

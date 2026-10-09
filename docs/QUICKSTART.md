@@ -1,12 +1,13 @@
 # Quick Start Guide
 
-Get up and running with llama.cpp CUDA binaries in 5 minutes.
+Get pre-built llama.cpp CUDA 13.2 binaries running in 5 minutes.
 
 ## Prerequisites
 
-1. NVIDIA GPU (compute capability 7.5 or higher)
-2. NVIDIA driver installed (check with `nvidia-smi`)
-3. Linux x86_64 system (Ubuntu 22.04 or compatible)
+1. NVIDIA GPU, compute capability **7.5 or higher** (RTX 5090 = 12.0)
+2. NVIDIA driver **>= 580.13** (CUDA 13.2 minimum)
+3. Linux x86_64 (Ubuntu 24.04 compatible)
+4. The CUDA runtime is **bundled** in the tarball — no toolkit install needed
 
 ## Step 1: Check Your GPU
 
@@ -14,7 +15,7 @@ Get up and running with llama.cpp CUDA binaries in 5 minutes.
 nvidia-smi --query-gpu=name,compute_cap --format=csv
 ```
 
-This shows your GPU name and compute capability. Make sure it's 7.5 or higher.
+RTX 5090 reports `compute_cap 12.0`. Any value >= 7.5 works.
 
 ## Step 2: Check Your Driver
 
@@ -22,149 +23,72 @@ This shows your GPU name and compute capability. Make sure it's 7.5 or higher.
 nvidia-smi | grep "Driver Version"
 ```
 
-Compare against [minimum driver versions](GPU-COMPATIBILITY.md#minimum-cuda-driver-versions):
-- CUDA 12.4: Driver >= 550.54
-- CUDA 12.6: Driver >= 560.28  ← **Recommended for most users**
-- CUDA 12.8: Driver >= 570.15
-- CUDA 12.9: Driver >= 580.13
+| CUDA | Min driver (Linux) |
+|------|---------------------|
+| 13.2 | **>= 580.13** ← this fork |
+| 12.8 | >= 570.15 |
+| 12.6 | >= 560.28 |
 
-**If your driver is too old, download an older CUDA version or update your driver.**
+If your driver is older than 580.13, update it or the binary will refuse to load.
 
 ## Step 3: Download Binaries
 
 1. Go to [Releases](../../releases/latest)
-2. Download the tarball for your CUDA version, e.g.:
-   ```bash
-   wget https://github.com/ai-dock/llama.cpp-cuda/releases/download/bXXXX/llama.cpp-bXXXX-cuda-12.6.3.tar.gz
-   ```
+2. Download the fork tarball you want, e.g. `llama.cpp-cuda-13.2-turboquant-amd64.tar.gz`
+   (also available: `vanilla`, `atomic`, `prism`)
 
-**Not sure which version?** Use CUDA 12.6.3 for most systems.
+```bash
+# example: turboquant fork
+wget https://github.com/tayuLuc/yet-another-llama.cpp-cuda-fork/releases/download/cuda-13.2-build-20260718/llama.cpp-cuda-13.2-turboquant-amd64.tar.gz
+```
 
 ## Step 4: Extract
 
 ```bash
-tar -xzf llama.cpp-bXXXX-cuda-12.6.3.tar.gz
-cd cuda-12.6.3
+tar -xzf llama.cpp-cuda-13.2-turboquant-amd64.tar.gz
+cd cuda-13.2/turboquant
 ```
 
 ## Step 5: Download a Model
 
-Get a GGUF model (e.g., from [Hugging Face](https://huggingface.co/models?library=gguf)):
-
 ```bash
-# Example: Download a 7B model
 wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_M.gguf
 ```
 
-## Step 6: Run!
+## Step 6: Run
 
-### Simple Chat
 ```bash
+# Chat
 ./llama-cli -m llama-2-7b.Q4_K_M.gguf -p "Hello, how are you?"
-```
 
-### Interactive Chat
-```bash
-./llama-cli -m llama-2-7b.Q4_K_M.gguf --interactive
-```
-
-### Start Server
-```bash
+# Server (http://localhost:8080)
 ./llama-server -m llama-2-7b.Q4_K_M.gguf
-# Then visit http://localhost:8080 in your browser
 ```
 
-## Common Options
-
-### Adjust GPU Offloading
+### Common Options
 ```bash
-# Offload all layers to GPU (faster)
-./llama-cli -m model.gguf -ngl 999
-
-# Offload specific number of layers
-./llama-cli -m model.gguf -ngl 32
+./llama-cli -m model.gguf -ngl 999          # offload all layers to GPU
+./llama-cli -m model.gguf -c 4096           # 4K context
+./llama-cli -m model.gguf --temp 0.7         # temperature
+./llama-cli -m model.gguf --seed 42         # reproducible
+./llama-bench -m model.gguf -o json > bench.json
 ```
 
-### Change Context Size
-```bash
-# Use 4K context
-./llama-cli -m model.gguf -c 4096
+## Verify CUDA Works
 
-# Use 2K context (saves memory)
-./llama-cli -m model.gguf -c 2048
+You should see (note `compute capability 12.0` for RTX 5090):
 ```
-
-### Adjust Temperature
-```bash
-# More creative (higher temperature)
-./llama-cli -m model.gguf --temp 0.9
-
-# More focused (lower temperature)
-./llama-cli -m model.gguf --temp 0.5
-```
-
-### Set Seed for Reproducibility
-```bash
-./llama-cli -m model.gguf --seed 42
-```
-
-## Verify CUDA is Working
-
-You should see output like:
-```
-ggml_cuda_init: GGML_CUDA_FORCE_MMQ:   no
 ggml_cuda_init: CUDA_USE_TENSOR_CORES: yes
 ggml_cuda_init: found 1 CUDA devices:
-  Device 0: NVIDIA GeForce RTX 3090, compute capability 8.6
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0
 ```
-
-If you see this, CUDA is working! 🎉
 
 ## Troubleshooting
 
-### "CUDA driver version is insufficient"
-Your driver is too old. Either:
-- Update driver: `sudo apt-get install nvidia-driver-XXX`
-- Or download older CUDA build (e.g., 12.4.1)
+**"CUDA driver version is insufficient"** → update driver to >= 580.13, or use an older CUDA build.
 
-### "no CUDA-capable device is detected"
-```bash
-# Check if GPU is visible
-nvidia-smi
+**"no CUDA-capable device is detected"** → `nvidia-smi` to confirm GPU visible; `sudo modprobe nvidia` if modules missing.
 
-# Load NVIDIA modules if needed
-sudo modprobe nvidia
-```
+**Out of memory** → smaller model, Q4_K_M quant, `-c 2048`, `-ngl 32`.
 
-### Out of memory
-- Use smaller model (7B instead of 13B)
-- Use more aggressive quantization (Q4_K_M instead of Q8_0)
-- Reduce context: `-c 2048`
-- Offload fewer layers: `-ngl 32`
-
-### More help
-See the [Troubleshooting Guide](TROUBLESHOOTING.md) for detailed solutions.
-
-## Next Steps
-
-- 📖 Read the [full documentation](../README.md)
-- 🔧 Check [GPU compatibility](GPU-COMPATIBILITY.md)
-- 🎯 Learn more [llama.cpp options](https://github.com/ggml-org/llama.cpp/blob/master/examples/main/README.md)
-- 🚀 Run the [server](https://github.com/ggml-org/llama.cpp/tree/master/examples/server)
-
-## Benchmark Your Setup
-
-```bash
-# Run benchmark
-./llama-bench -m model.gguf
-
-# Save results
-./llama-bench -m model.gguf -o json > benchmark.json
-```
-
-## Getting Help
-
-- Build issues: [Open an issue](../../issues)
-- llama.cpp questions: [llama.cpp discussions](https://github.com/ggml-org/llama.cpp/discussions)
-
-Happy prompting! 🦙
+**Missing shared libs** → the runtime is bundled in the tarball; ensure you extracted the whole archive and `chmod +x llama-*`.

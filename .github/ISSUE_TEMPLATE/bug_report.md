@@ -26,8 +26,8 @@ A clear and concise description of the bug.
 ```
 
 **Build Information:**
-- CUDA Version: [e.g., 12.6.3]
-- llama.cpp Version: [e.g., b1234]
+- CUDA Version: [e.g., 13.2]
+- llama.cpp Version: [e.g., b9536]
 - Download Link: [link to release you downloaded]
 
 ## Steps to Reproduce
@@ -51,7 +51,7 @@ Paste the full error output here
 Add any other context about the problem here.
 
 ## Checklist
-- [ ] I have checked the [Troubleshooting Guide](../docs/TROUBLESHOOTING.md)
-- [ ] I have verified my GPU is supported (see [GPU Compatibility](../docs/GPU-COMPATIBILITY.md))
-- [ ] I have the minimum required NVIDIA driver version
+- [ ] I have checked the Troubleshooting Guide
+- [ ] I have verified my GPU is supported (RTX 5090 = compute 12.0)
+- [ ] I have the minimum required NVIDIA driver (>= 580.13 for CUDA 13.2)
 - [ ] This is about the build process or binaries (not llama.cpp functionality)
