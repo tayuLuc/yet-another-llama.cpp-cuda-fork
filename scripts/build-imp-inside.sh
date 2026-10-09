@@ -62,7 +62,13 @@ cmake -B build -S . \
   -DIMP_DISABLE_120F_FALLBACK=ON \
   -DIMP_BUILD_BENCH=OFF
 
-cmake --build build --config Release -j"$(nproc)"
+# -j$(nproc) OOM-kills a 16 GB runner: imp's four CUTLASS TUs peak at
+# 5.2-7.9 GB resident each and start within 7 s of each other, which is exit 137
+# with no compiler diagnostic. imp ships scripts/build_jobs.sh for exactly this;
+# it reads the cgroup limit when there is one. Reused instead of reinvented.
+JOBS=$(sh src/scripts/build_jobs.sh)
+echo "building with -j${JOBS} (nproc=$(nproc))"
+cmake --build build --config Release -j"$JOBS"
 
 echo '=== CCache Statistics ==='
 ccache -s
