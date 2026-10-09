@@ -223,7 +223,12 @@ jobs:
             nvidia/cuda:${CUDA_TAG} \
             bash /workspace/scripts/build-inside.sh
 
-          docker rmi nvidia/cuda:${CUDA_TAG} || true
+          # No `docker rmi` here (it was added in c1cfc0a, "More aggressive space
+          # saving", 2025-10-23). The runner is ephemeral: nothing survives to the
+          # next run, so dropping the image freed space only within this one job.
+          # Meanwhile the image is several GB per build and Docker Hub caps
+          # anonymous pulls at 100/hour per IP, shared across runner ranges - so
+          # throwing it away only guarantees the next run re-downloads it.
           sudo chown -R $(id -u):$(id -g) $PWD
           df -h
 
