@@ -229,6 +229,7 @@ jobs:
             -e ARCHS="${ARCHS}" \
             -e KIND="${KIND}" \
             -e ASSET_PREFIX="${ASSET_PREFIX}" \
+            -e CUDA_TAG="${CUDA_TAG}" \
             nvidia/cuda:${CUDA_TAG} \
             bash /workspace/scripts/build-inside.sh
 

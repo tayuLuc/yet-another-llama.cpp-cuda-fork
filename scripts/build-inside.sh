@@ -23,6 +23,11 @@ cd /workspace
 # different CUDA minor version. Forking here keeps one pipeline instead of two
 # and keeps the registry in forks.json as the single source of truth.
 if [ "${KIND:-llamacpp}" = "imp" ]; then
+  # build-imp-inside.sh predates the fold-in and reads IMP_REPO, not REPO. Without
+  # this the clone runs as "https://github.com/.git" and dies with "remote: Not
+  # Found" - which is exactly how the first merged run failed. Alias it here so the
+  # outer script keeps one env contract.
+  export IMP_REPO="${REPO}"
   exec bash /workspace/scripts/build-imp-inside.sh
 fi
 
