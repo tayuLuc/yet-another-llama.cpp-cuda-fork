@@ -64,6 +64,9 @@ jobs:
             REPO=$(jq -r ".forks[$i].repo" forks.json)
             BRANCH=$(jq -r ".forks[$i].branch // \"\"" forks.json)
             SUBDIR=$(jq -r ".forks[$i].subdir" forks.json)
+            KIND=$(jq -r ".forks[$i].kind // \"llamacpp\"" forks.json)
+            ASSET_PREFIX=$(jq -r ".forks[$i].asset_prefix // \"llama.cpp-cuda-13.2\"" forks.json)
+            FORK_CUDA=$(jq -r ".forks[$i].cuda_tag // empty" forks.json)
 
             # ---- STABLE: latest release (prerelease releases count as releases) ----
             REL=$(curl -s "https://api.github.com/repos/${REPO}/releases" | jq -r '.[0] // empty')
@@ -100,7 +103,8 @@ jobs:
               ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
                       --arg mode "stable" --arg ref "$STABLE_REF" --arg reltag "$STABLE_TAG" \
                       --arg pre "$STABLE_PRE" --arg subdir "$SUBDIR" --arg arch "$ARCHS" \
-                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir, architectures:$arch}')
+                      --arg kind "$KIND" --arg prefix "$ASSET_PREFIX" --arg ctag "$FORK_CUDA" \
+                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir, architectures:$arch, kind:$kind, asset_prefix:$prefix, cuda_tag:$ctag}')
               MATRIX_ITEMS=$(echo "$MATRIX_ITEMS" | jq --argjson it "$ITEM" '. + [$it]')
             else
               echo "Fork $NAME: stable ref=$STABLE_REF unchanged (last=$LAST_STABLE)"
@@ -119,7 +123,8 @@ jobs:
               ITEM=$(jq -n --arg name "$NAME" --arg repo "$REPO" --arg branch "$BRANCH" \
                       --arg mode "nightly" --arg ref "$NIGHTLY_REF" --arg reltag "" \
                       --arg pre "true" --arg subdir "$SUBDIR" --arg arch "$ARCHS" \
-                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir, architectures:$arch}')
+                      --arg kind "$KIND" --arg prefix "$ASSET_PREFIX" --arg ctag "$FORK_CUDA" \
+                      '{name:$name, repo:$repo, branch:$branch, mode:$mode, ref:$ref, reltag:$reltag, prerelease:$pre, subdir:$subdir, architectures:$arch, kind:$kind, asset_prefix:$prefix, cuda_tag:$ctag}')
               MATRIX_ITEMS=$(echo "$MATRIX_ITEMS" | jq --argjson it "$ITEM" '. + [$it]')
             else
               echo "Fork $NAME: nightly ref=$NIGHTLY_REF unchanged (last=$LAST_NIGHTLY)"
@@ -191,14 +196,16 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .ccache
-          key: ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.mode }}-${{ matrix.ref }}
+          key: ${{ runner.os }}-ccache-${{ matrix.asset_prefix }}-${{ matrix.name }}-${{ matrix.mode }}-${{ matrix.ref }}
           restore-keys: |
-            ${{ runner.os }}-ccache-cuda13.2-${{ matrix.name }}-${{ matrix.mode }}-
+            ${{ runner.os }}-ccache-${{ matrix.asset_prefix }}-${{ matrix.name }}-${{ matrix.mode }}-
 
       - name: Build ${{ matrix.name }} (${{ matrix.mode }}) with CUDA
         if: steps.chk.outputs.skip != 'true'
         env:
-          CUDA_TAG: '13.2.0-cudnn-devel-ubuntu24.04'
+          CUDA_TAG: ${{ matrix.cuda_tag || '13.2.0-cudnn-devel-ubuntu24.04' }}
+          KIND: ${{ matrix.kind }}
+          ASSET_PREFIX: ${{ matrix.asset_prefix }}
           ARCHS: ${{ matrix.architectures }}
           SUBDIR: ${{ matrix.subdir }}
           REPO: ${{ matrix.repo }}
@@ -220,6 +227,8 @@ jobs:
             -e MODE="${MODE}" \
             -e SUBDIR="${SUBDIR}" \
             -e ARCHS="${ARCHS}" \
+            -e KIND="${KIND}" \
+            -e ASSET_PREFIX="${ASSET_PREFIX}" \
             nvidia/cuda:${CUDA_TAG} \
             bash /workspace/scripts/build-inside.sh
 
@@ -236,7 +245,7 @@ jobs:
         if: steps.chk.outputs.skip != 'true'
         run: |
           cd binaries
-          tar -czf llama.cpp-cuda-13.2-${{ matrix.name }}-${{ matrix.mode }}-amd64.tar.gz ${{ matrix.subdir }}
+          tar -czf "${{ matrix.asset_prefix }}-${{ matrix.name }}-${{ matrix.mode }}-amd64.tar.gz" "${{ matrix.subdir }}"
           ls -lh *.tar.gz
 
       - name: Upload artifact
@@ -275,7 +284,7 @@ jobs:
           sha12="${sha:0:12}"
           # Explicit tarball path (do NOT glob binaries/*.tar.gz — the CUDA
           # asset would sort before the fork tarball and break parsing).
-          f="binaries/llama.cpp-cuda-13.2-${name}-${mode}-amd64.tar.gz"
+          f="binaries/${ASSET_PREFIX}-${name}-${mode}-amd64.tar.gz"
           if [ ! -f "$f" ]; then
             echo "FATAL: built tarball missing: $f"
             exit 1

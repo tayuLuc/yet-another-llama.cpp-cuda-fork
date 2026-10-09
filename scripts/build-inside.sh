@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Build llama.cpp fork inside the CUDA container and package the 3 primary
-# binaries (llama-server, llama-cli, llama-bench). For the vanilla fork only,
-# also package the CUDA runtime libs into a separate asset (see below).
+# Build a backend inside the CUDA container and package its binaries.
+#
+# KIND=llamacpp (default): a llama.cpp fork, packaged as
+#   llama-server, llama-cli, llama-bench. The vanilla fork additionally ships the
+#   shared CUDA runtime asset (see below).
+# KIND=imp: delegated to build-imp-inside.sh, which packages imp-server/imp-cli.
+#   imp needs its own dependency set and CUDA 13.4, so it does not share the
+#   cmake flags below.
 set -e
 
 apt-get update -qq
@@ -13,6 +18,13 @@ ccache -M 3G
 ccache -z
 
 cd /workspace
+
+# imp is not a llama.cpp fork: different CMake option names, different binaries,
+# different CUDA minor version. Forking here keeps one pipeline instead of two
+# and keeps the registry in forks.json as the single source of truth.
+if [ "${KIND:-llamacpp}" = "imp" ]; then
+  exec bash /workspace/scripts/build-imp-inside.sh
+fi
 
 if [ -n "$BRANCH" ]; then
   git clone --branch "$BRANCH" "https://github.com/${REPO}.git" src
