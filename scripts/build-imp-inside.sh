@@ -7,8 +7,10 @@
 set -e
 
 apt-get update -qq
+# wget comes from the base image, not from apt's suggestion set, but the base
+# variant differs between toolkit tags - install it explicitly.
 apt-get install -y --no-install-recommends git ninja-build build-essential \
-    libssl-dev ca-certificates ccache lld
+    libssl-dev ca-certificates ccache lld wget
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
@@ -20,6 +22,16 @@ wget -qO "$CMAKE_SH" https://github.com/Kitware/CMake/releases/download/v4.3.5/c
 echo 'b48d919cf4dec27e594f9e0c227e48274e20238bcda8b4b471a94f9099cccd83  /tmp/cmake.sh' | sha256sum -c -
 sh "$CMAKE_SH" --skip-license --prefix=/usr/local
 cmake --version
+
+# Preflight: a missing tool otherwise surfaces five minutes into a container run.
+missing=""
+for t in git cmake ninja ccache strip objdump wget; do
+  command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+done
+if [ -n "$missing" ]; then
+  echo "FATAL: missing tools:$missing" >&2
+  exit 1
+fi
 
 ccache -M 3G
 ccache -z
