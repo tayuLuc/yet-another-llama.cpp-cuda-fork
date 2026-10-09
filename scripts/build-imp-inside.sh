@@ -3,7 +3,12 @@
 #
 # Separate from build-inside.sh because imp is not a llama.cpp fork: its CMake
 # options are IMP_*, not LLAMA_*, and it needs CUDA 13.4 where this repo builds
-# 13.2 for the forks. Env: IMP_REPO, REF, SUBDIR, MODE, ARCHS, CUDA_TAG.
+# 13.2 for the forks. Env: IMP_REPO, REF, SUBDIR, MODE, CUDA_TAG.
+#
+# No linker flags and no libcuda stub symlink: imp links CUDA::cuda_driver but
+# the imp CI builds in the same toolkit image with neither, and copying them from
+# the fork lane cost a "cannot find 'ld'" because -fuse-ld=lld needs the lld
+# package that imp does not install.
 set -e
 
 # The Ubuntu index shipped malformed on 2026-09-16 (sections without a
@@ -45,8 +50,6 @@ git clone "https://github.com/${IMP_REPO}.git" src
 cd src
 git checkout "$REF"
 
-ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
-
 cmake -B build -S . \
   -G Ninja \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -57,9 +60,7 @@ cmake -B build -S . \
   -DIMP_BUILD_TOOLS=ON \
   -DIMP_BUILD_SERVER=ON \
   -DIMP_DISABLE_120F_FALLBACK=ON \
-  -DIMP_BUILD_BENCH=OFF \
-  -DCMAKE_EXE_LINKER_FLAGS='-fuse-ld=lld -Wl,-rpath-link,/usr/local/cuda/lib64/stubs -Wl,-rpath,$ORIGIN' \
-  -DCMAKE_SHARED_LINKER_FLAGS='-fuse-ld=lld -Wl,-rpath-link,/usr/local/cuda/lib64/stubs'
+  -DIMP_BUILD_BENCH=OFF
 
 cmake --build build --config Release -j"$(nproc)"
 
