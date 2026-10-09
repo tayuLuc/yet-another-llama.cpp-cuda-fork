@@ -14,11 +14,13 @@ sed -i 's|archive.ubuntu.com|de.archive.ubuntu.com|g; s|security.ubuntu.com|de.a
 rm -f /etc/apt/sources.list.d/cuda*.list
 
 apt-get update -qq
-# Exactly imp's own Dockerfile list: find_package() needs CURL, OpenSSL and JPEG,
-# python3 drives FetchContent, and liburing-dev is what compiles the io_uring
-# backend in - without it the shipped binary silently loses that backend.
+# imp's own Dockerfile list, minus the Kitware cmake it installs separately:
+# find_package() needs CURL, OpenSSL and JPEG, python3 drives FetchContent, and
+# liburing-dev is what compiles the io_uring backend in - without it the shipped
+# binary silently loses that backend. cmake comes from apt here: imp asks for
+# 3.25 (CMakeLists.txt:1) and the fork lanes already build on the distro package.
 apt-get install -y --no-install-recommends \
-    g++ git ninja-build ca-certificates python3 ccache \
+    cmake g++ git ninja-build ca-certificates python3 ccache \
     libcurl4-openssl-dev libjpeg-turbo8-dev liburing-dev
 apt-get clean
 rm -rf /var/lib/apt/lists/*
