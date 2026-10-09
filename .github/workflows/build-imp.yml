@@ -123,7 +123,19 @@ jobs:
           # Digest-pinned to the same toolkit the imp PLE CI builds with, so the
           # fork lanes (13.2) and the imp lane (13.4) never drift by tag.
           IMAGE="nvidia/cuda:${CUDA_TAG}@sha256:14fd494fd8496817a70700e4d2c52bd42de56c5d39c041bf8342814614d5fe56"
-          docker pull "$IMAGE"
+          # Anonymous Docker Hub pulls are rate limited per IP and GitHub runners
+          # share ranges, so a multi-GB toolkit pull fails with "toomanyrequests"
+          # without any credential of ours being involved. The limit refills, so
+          # retry rather than fail the whole build over a shared quota.
+          for attempt in 1 2 3 4 5 6; do
+            if docker pull "$IMAGE"; then break; fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "FATAL: could not pull $IMAGE after 6 attempts" >&2
+              exit 1
+            fi
+            echo "pull failed (attempt $attempt), retrying in 60s"
+            sleep 60
+          done
           docker run --rm \
             -v "$PWD:/workspace" \
             -v "$PWD/.ccache:/root/.ccache" \
