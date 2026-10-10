@@ -278,6 +278,13 @@ jobs:
         if: success() && steps.chk.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          # Step-scoped on the Build step above, so it is empty here
+          # without this line: the publish then looks for
+          # binaries/-<name>-<mode>-amd64.tar.gz and dies with
+          # "built tarball missing". Only forks whose release already
+          # exists (skip=true) never reach this step, which is why the
+          # first merged run hid it.
+          ASSET_PREFIX: ${{ matrix.asset_prefix }}
         run: |
           name="${{ matrix.name }}"
           mode="${{ matrix.mode }}"

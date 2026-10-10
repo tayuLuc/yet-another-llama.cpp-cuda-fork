@@ -66,7 +66,7 @@ cmake -B build -S . \
 # 5.2-7.9 GB resident each and start within 7 s of each other, which is exit 137
 # with no compiler diagnostic. imp ships scripts/build_jobs.sh for exactly this;
 # it reads the cgroup limit when there is one. Reused instead of reinvented.
-JOBS=$(sh src/scripts/build_jobs.sh)
+JOBS=$(sh scripts/build_jobs.sh)
 echo "building with -j${JOBS} (nproc=$(nproc))"
 cmake --build build --config Release -j"$JOBS"
 
