@@ -74,6 +74,13 @@ find "binaries/${SUBDIR}/" -type f -executable ! -name '*.so*' -exec strip {} \;
 # swap image at exec, and nvidia-smi inside would pass the same trap).
 SONAME=$(objdump -p "binaries/${SUBDIR}/infernix-serve" | awk '/NEEDED/ {print $2}' | grep -c 'libcudart\.so\.13' || true)
 [ "${SONAME}" -gt 0 ] || { echo "FATAL: infernix-serve does not link libcudart.so.13" >&2; ldd "binaries/${SUBDIR}/infernix-serve" | head >&2; exit 1; }
-ldd "binaries/${SUBDIR}/infernix-serve" | awk '/not found/ {print "FATAL unresolved:", $1; exit 1}'
+# libcuda.so.1 resolves against the driver (not the container): the runtime base
+# image and GH runners have no /usr/lib/x86_64-linux-gnu/libcuda.so.1, so ldd
+# flags it. The same NEEDED line that our imp lane passes at runtime; check it
+# against a stub, not against nothing. Same doctrine as build-inside.sh:197.
+mkdir -p /tmp/cuda-stubs
+[ -f /usr/local/cuda/lib64/stubs/libcuda.so ] && cp /usr/local/cuda/lib64/stubs/libcuda.so /tmp/cuda-stubs/libcuda.so.1
+LD_LIBRARY_PATH=/tmp/cuda-stubs ldd "binaries/${SUBDIR}/infernix-serve" \
+  | awk '/not found/ && $1 != "libcuda.so.1" {print "FATAL unresolved:", $1; exit 1}'
 echo "infernix-serve links libcudart.so.13 - OK"
 ls -lh "binaries/${SUBDIR}/"
