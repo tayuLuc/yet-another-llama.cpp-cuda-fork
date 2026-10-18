@@ -23,6 +23,10 @@ on:
         required: false
         type: boolean
         default: false
+      forks:
+        description: 'Space-separated fork names to build (empty = all; e.g. infernix)'
+        required: false
+        default: ''
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -54,6 +58,7 @@ jobs:
         id: plan
         run: |
           FORCE="${{ github.event.inputs.force_build }}"
+          ONLY="${{ github.event.inputs.forks }}"   # empty = all forks
 
           COUNT=$(jq '.forks | length' forks.json)
           ARCHS=$(jq -r '.architectures' forks.json)
@@ -61,6 +66,7 @@ jobs:
 
           for i in $(seq 0 $((COUNT-1))); do
             NAME=$(jq -r ".forks[$i].name" forks.json)
+            if [ -n "$ONLY" ] && ! echo " $ONLY " | grep -q " $NAME "; then continue; fi
             REPO=$(jq -r ".forks[$i].repo" forks.json)
             BRANCH=$(jq -r ".forks[$i].branch // \"\"" forks.json)
             SUBDIR=$(jq -r ".forks[$i].subdir" forks.json)
@@ -154,6 +160,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           FORCE="${{ github.event.inputs.force_build }}"
+          ONLY="${{ github.event.inputs.forks }}"   # empty = all forks
           SHA12="${{ matrix.ref }}"
           SHA12="${SHA12:0:12}"
           if [ "${{ matrix.mode }}" = "stable" ]; then
