@@ -22,6 +22,12 @@ cd /workspace
 # imp is not a llama.cpp fork: different CMake option names, different binaries,
 # different CUDA minor version. Forking here keeps one pipeline instead of two
 # and keeps the registry in forks.json as the single source of truth.
+if [ "${KIND:-llamacpp}" = "infernix" ]; then
+  # Same fold-in doctrine as imp: one pipeline, registry (forks.json) is the
+  # single source of truth. The lane script reads REPO/REF directly.
+  exec bash /workspace/scripts/build-infernix-inside.sh
+fi
+
 if [ "${KIND:-llamacpp}" = "imp" ]; then
   # build-imp-inside.sh predates the fold-in and reads IMP_REPO, not REPO. Without
   # this the clone runs as "https://github.com/.git" and dies with "remote: Not
