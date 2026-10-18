@@ -58,6 +58,17 @@
       "asset_prefix": "imp-cuda13.4",
       "architectures": "75-virtual;80-virtual;86-virtual;89-virtual;90-virtual;100-virtual;120",
       "name": "imp"
+    },
+    {
+      "name": "infernix",
+      "repo": "Wallawalla47/Infernix",
+      "branch": "main",
+      "track": "branch",
+      "subdir": "infernix",
+      "note": "Infernix (NInfer lineage) runs NVIDIA Dense8 + .ngram directly; upstream ships no Linux binaries (windows-only releases) so we build from source. Kind=infernix lane: own CMake flags (INFERNIX_*), ffmpeg dev libs; upstream has no releases (2026-10-19 probe) -> stable lane stays empty by design until a Linux release appears, nightly = main HEAD. track:branch is a marker for future plan-step specialization; current plan step derives stable from releases API (empty for this repo).",
+      "kind": "infernix",
+      "asset_prefix": "infernix-cuda-13.2",
+      "cuda_tag": "13.2.0-cudnn-devel-ubuntu24.04"
     }
   ]
 }
