@@ -19,6 +19,7 @@ apt-get update -qq
 apt-get install -y --no-install-recommends \
     cmake ninja-build pkg-config git ccache \
     libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+    libjpeg-turbo8-dev \
     libcurl4-openssl-dev
 apt-get clean
 rm -rf /var/lib/apt/lists/*
