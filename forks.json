@@ -63,7 +63,7 @@
       "name": "infernix",
       "repo": "Wallawalla47/Infernix",
       "branch": "main",
-      "track": "branch",
+      "track": "main",
       "subdir": "infernix",
       "note": "Infernix (NInfer lineage), built from source. CUDA>=13.4 + arch 120a are upstream CMake hard requirements (13.2 miscompiles sm_120a, Infernix#48). stable lane = releases API; no Linux releases upstream.",
       "kind": "infernix",
