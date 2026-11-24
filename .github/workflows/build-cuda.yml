@@ -73,13 +73,15 @@ jobs:
           # limit for GITHUB_TOKEN). A 403 body is a JSON object, and jq '.[0]' on an
           # object kills the whole plan with "Cannot index object with number", so refuse
           # non-arrays and let a rate limit degrade into "no new release visible".
+          # -r, not -c: -c quotes scalars, and a quoted sha reaches the matrix as "abc" and
+          # dies in git checkout. -r matches the raw output the old one-liners produced.
           api() {
             local url="$1" jqf="${2:-.}" body i
             for i in 1 2 3; do
               if body=$(curl -fsS --max-time 30 \
                           -H "Authorization: Bearer ${GITHUB_TOKEN}" \
                           -H "Accept: application/vnd.github+json" "$url" 2>/dev/null); then
-                printf '%s' "$body" | jq -c "if type==\"array\" then (${jqf}) elif type==\"object\" and has(\"message\") then null else (${jqf}) end"
+                printf '%s' "$body" | jq -r "if type==\"array\" then (${jqf}) elif type==\"object\" and has(\"message\") then null else (${jqf}) end"
                 return 0
               fi
               echo "  api attempt $i failed for $url" >&2
