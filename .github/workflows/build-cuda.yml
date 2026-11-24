@@ -34,6 +34,8 @@ env:
 jobs:
   check-forks:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
@@ -56,6 +58,8 @@ jobs:
 
       - name: Plan which forks changed
         id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           FORCE="${{ github.event.inputs.force_build }}"
           ONLY="${{ github.event.inputs.forks }}"   # empty = all forks
@@ -63,6 +67,27 @@ jobs:
           COUNT=$(jq '.forks | length' forks.json)
           ARCHS=$(jq -r '.architectures' forks.json)
           MATRIX_ITEMS="[]"
+
+          # Authenticated: unauthenticated api.github.com is 60 requests/hour per shared
+          # runner IP, GITHUB_TOKEN gives 1000/hour per repository (docs, Primary rate
+          # limit for GITHUB_TOKEN). A 403 body is a JSON object, and jq '.[0]' on an
+          # object kills the whole plan with "Cannot index object with number", so refuse
+          # non-arrays and let a rate limit degrade into "no new release visible".
+          api() {
+            local url="$1" jqf="${2:-.}" body i
+            for i in 1 2 3; do
+              if body=$(curl -fsS --max-time 30 \
+                          -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                          -H "Accept: application/vnd.github+json" "$url" 2>/dev/null); then
+                printf '%s' "$body" | jq -c "if type==\"array\" then (${jqf}) elif type==\"object\" and has(\"message\") then null else (${jqf}) end"
+                return 0
+              fi
+              echo "  api attempt $i failed for $url" >&2
+              sleep 20
+            done
+            echo "  api unavailable for $url: treating as no new release" >&2
+            printf 'null'
+          }
 
           for i in $(seq 0 $((COUNT-1))); do
             NAME=$(jq -r ".forks[$i].name" forks.json)
@@ -75,14 +100,16 @@ jobs:
             FORK_CUDA=$(jq -r ".forks[$i].cuda_tag // empty" forks.json)
 
             # ---- STABLE: latest release (prerelease releases count as releases) ----
-            REL=$(curl -s "https://api.github.com/repos/${REPO}/releases" | jq -r '.[0] // empty')
+            REL=$(api "https://api.github.com/repos/${REPO}/releases?per_page=5" '.[0] // empty')
+            [ "$REL" = "null" ] && REL=""
             if [ -n "$REL" ]; then
               REL_TAG=$(echo "$REL" | jq -r '.tag_name')
               REL_PRE=$(echo "$REL" | jq -r '.prerelease')
               REL_REF=$(echo "$REL" | jq -r '.target_commitish')
               # target_commitish may be a branch name (e.g. turboquant) -> resolve to SHA
               if ! echo "$REL_REF" | grep -qE '^[0-9a-f]{40}$'; then
-                REL_REF=$(curl -s "https://api.github.com/repos/${REPO}/commits/${REL_REF}" | jq -r '.sha')
+                REL_REF=$(api "https://api.github.com/repos/${REPO}/commits/${REL_REF}" '.sha // empty')
+                [ "$REL_REF" = "null" ] && REL_REF=""
               fi
               STABLE_REF="$REL_REF"
               STABLE_TAG="$REL_TAG"
@@ -95,7 +122,8 @@ jobs:
 
             # ---- NIGHTLY: HEAD of tracked branch (only if a branch is configured) ----
             if [ -n "$BRANCH" ]; then
-              NIGHTLY_REF=$(curl -s "https://api.github.com/repos/${REPO}/commits/${BRANCH}" | jq -r '.sha')
+              NIGHTLY_REF=$(api "https://api.github.com/repos/${REPO}/commits/${BRANCH}" '.sha // empty')
+              [ "$NIGHTLY_REF" = "null" ] && NIGHTLY_REF=""
             else
               NIGHTLY_REF=""
             fi

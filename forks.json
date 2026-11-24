@@ -67,8 +67,8 @@
       "subdir": "infernix",
       "note": "Infernix (NInfer lineage) runs NVIDIA Dense8 + .ngram directly; upstream ships no Linux binaries (windows-only releases) so we build from source. Kind=infernix lane: own CMake flags (INFERNIX_*), ffmpeg dev libs; upstream has no releases (2026-10-19 probe) -> stable lane stays empty by design until a Linux release appears, nightly = main HEAD. track:branch is a marker for future plan-step specialization; current plan step derives stable from releases API (empty for this repo).",
       "kind": "infernix",
-      "asset_prefix": "infernix-cuda-13.2",
-      "cuda_tag": "13.2.0-cudnn-devel-ubuntu24.04"
+      "asset_prefix": "infernix-cuda-13.4",
+      "cuda_tag": "13.4.2-devel-ubuntu26.04@sha256:14fd494fd8496817a70700e4d2c52bd42de56c5d39c041bf8342814614d5fe56"
     }
   ]
 }
