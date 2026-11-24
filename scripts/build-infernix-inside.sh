@@ -16,10 +16,19 @@ rm -f /etc/apt/sources.list.d/cuda*.list
 apt-get update -qq
 # Infernix Dockerfile build-stage list (Dockerfile:6-14): cmake, ffmpeg dev libs,
 # curl dev, ninja, pkg-config. cmake from apt (fork lanes precedent).
+# libjpeg-turbo8-dev is in THEIR install list (Dockerfile:20, upstream
+# Wallawalla47/Infernix, probed 24.11); our lane list was copied from the cited
+# window Dockerfile:6-14 and missed line 20, so cmake died at
+# cmake/Dependencies.cmake:41 find_package(JPEG) with "Could NOT find JPEG
+# (missing: JPEG_LIBRARY JPEG_INCLUDE_DIR)" - measured in run 160 (24.11).
+# Their build stage is plain nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04
+# (Dockerfile:10), ours is 13.4.2-devel-ubuntu26.04 to match the runtime image's
+# ubuntu26.04 userland (glibc 2.43, measured in the live container); the package
+# exists on both: 2.1.5-4ubuntu4 on 26.04/resolute, same name on 24.04.
 apt-get install -y --no-install-recommends \
     cmake ninja-build pkg-config git ccache \
     libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-    libcurl4-openssl-dev
+    libcurl4-openssl-dev libjpeg-turbo8-dev
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
