@@ -73,10 +73,10 @@
     {
       "name": "basalt",
       "repo": "jesdga95/basalt",
-      "branch": "master",
+      "branch": "main",
       "track": "release",
       "subdir": "basalt",
-      "note": "MoE engine (RTX 5090). Stable = latest v-tag release source (author ships linux-x64 too; we rebuild per repo doctrine); nightly = master HEAD. Packaged by the author's own tools/package_release.py so the tar layout matches the release archives. nightly_always=true: the author retags v0.5.7 onto the moving master HEAD (target_commitish=master), so the tag's source equals HEAD and stable/nightly dedup would keep the nightly lane permanently empty; for this lane nightly means 'HEAD, deduped against the last nightly build only'.",
+      "note": "MoE engine (RTX 5090). Stable = latest v-tag release source (author ships linux-x64 too; we rebuild per repo doctrine); nightly = main HEAD. Packaged by the author's own tools/package_release.py so the tar layout matches the release archives. nightly_always=true: the author retags v0.5.7 onto the moving master HEAD (target_commitish=main), so the tag's source equals HEAD and stable/nightly dedup would keep the nightly lane permanently empty; for this lane nightly means 'HEAD, deduped against the last nightly build only'.",
       "kind": "basalt",
       "asset_prefix": "llama.cpp-cuda-13.2",
       "cuda_tag": "13.2.0-cudnn-devel-ubuntu24.04",
