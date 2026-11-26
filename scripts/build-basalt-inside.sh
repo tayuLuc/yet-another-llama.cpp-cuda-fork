@@ -67,8 +67,13 @@ echo '=== CCache Statistics ==='
 ccache -s
 
 # The author's packer wants a release tag; nightly builds are addressed by sha
-# (RELTAG is empty for mode=nightly, per the workflow matrix).
-TAG="${RELTAG:-nightly-$(git rev-parse --short "$REF")}"
+# (RELTAG is empty for mode=nightly, per the workflow matrix). The packer
+# (tools/package_release.py:63) accepts v<maj>.<min>.<patch>-<suffix> and at
+# line 67 requires the numeric part to equal the CMakeLists project VERSION,
+# so nightly tags read the version from CMakeLists: v<X.Y.Z>-nightly.<sha>.
+VER=$(sed -nE 's/project\(basalt VERSION ([0-9.]+).*/\1/p' CMakeLists.txt | head -1)
+[ -n "$VER" ] || { echo "build-basalt-inside: no project(basalt VERSION x.y.z) in CMakeLists.txt"; exit 1; }
+TAG="${RELTAG:-v${VER}-nightly.$(git rev-parse --short "$REF")}"
 python3 tools/package_release.py --tag "$TAG" --platform linux-x64 --out pkg
 
 cd /workspace
