@@ -69,6 +69,17 @@
       "kind": "infernix",
       "asset_prefix": "infernix-cuda-13.4",
       "cuda_tag": "13.4.2-cudnn-devel-ubuntu24.04@sha256:33b1211bae24f62cdabb8e765d1454e4c67eaed9e95fbdced33ea69b221249ec"
+    },
+    {
+      "name": "basalt",
+      "repo": "jesdga95/basalt",
+      "branch": "master",
+      "track": "release",
+      "subdir": "basalt",
+      "note": "MoE engine (RTX 5090). Stable = latest v-tag release source (author ships linux-x64 too; we rebuild per repo doctrine); nightly = master HEAD. Packaged by the author's own tools/package_release.py so the tar layout matches the release archives.",
+      "kind": "basalt",
+      "asset_prefix": "llama.cpp-cuda-13.2",
+      "cuda_tag": "13.2.0-cudnn-devel-ubuntu24.04"
     }
   ]
 }
