@@ -13,12 +13,20 @@
 # Env: REPO, REF, RELTAG (stable tag or empty), SUBDIR, MODE, ARCHS, CUDA_TAG.
 set -e
 
-# Same malformed-index workaround as the infernix lane (de mirrors, drop cuda apt list).
-sed -i 's|archive.ubuntu.com|de.archive.ubuntu.com|g; s|security.ubuntu.com|de.archive.ubuntu.com|g' \
-    /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+# Same malformed-index workaround as the infernix lane (de mirrors, drop cuda apt
+# list), applied to BOTH source formats: the 13.2 CUDA base ships the legacy
+# /etc/apt/sources.list (only the 13.4 base moved to deb822 ubuntu.sources, which
+# is all the infernix-lane sed knew about) - run 45801656634 died on
+# security.ubuntu.com mid-sync ("File has unexpected size", exit 100) because the
+# rewrite never touched its file.
+for f in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
+  sed -i 's|archive.ubuntu.com|de.archive.ubuntu.com|g; s|security.ubuntu.com|de.archive.ubuntu.com|g' "$f" 2>/dev/null || true
+done
 rm -f /etc/apt/sources.list.d/cuda*.list
 
-apt-get update -qq
+# Mirror sync is transient (the Release file was minutes old against a moving
+# Packages.gz): one retry, then fail loud.
+apt-get update -qq || { echo "apt-get update failed, retrying in 30s (mirror sync?)"; sleep 30; apt-get update -qq; }
 # Their Linux toolchain (actions/toolchain/action.yml:24-25): ninja + cuda-nvcc/
 # cudart-dev/crt/cccl/nvrtc-dev/cublas-dev - all in the nvidia/cuda devel image
 # we run in, so the apt list here is their runner additions plus python3 for
