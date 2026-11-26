@@ -7,6 +7,8 @@
 # KIND=imp: delegated to build-imp-inside.sh, which packages imp-server/imp-cli.
 #   imp needs its own dependency set and CUDA 13.4, so it does not share the
 #   cmake flags below.
+# KIND=basalt: delegated to build-basalt-inside.sh (BASALT_* options, author's
+#   package_release.py tree as the artifact: bin/ + serve/ + requirements.txt).
 set -e
 
 apt-get update -qq
@@ -22,6 +24,13 @@ cd /workspace
 # imp is not a llama.cpp fork: different CMake option names, different binaries,
 # different CUDA minor version. Forking here keeps one pipeline instead of two
 # and keeps the registry in forks.json as the single source of truth.
+if [ "${KIND:-llamacpp}" = "basalt" ]; then
+  # basalt (jesdga95/basalt): not a llama.cpp fork - BASALT_* cmake options, and
+  # its release tar is packed by the author's own tools/package_release.py.
+  # build-basalt-inside.sh mirrors release.yml inside our CUDA container.
+  exec bash /workspace/scripts/build-basalt-inside.sh
+fi
+
 if [ "${KIND:-llamacpp}" = "infernix" ]; then
   # Same fold-in doctrine as imp: one pipeline, registry (forks.json) is the
   # single source of truth. The lane script reads REPO/REF directly.
