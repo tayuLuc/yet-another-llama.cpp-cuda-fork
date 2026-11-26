@@ -98,6 +98,7 @@ jobs:
             BRANCH=$(jq -r ".forks[$i].branch // \"\"" forks.json)
             SUBDIR=$(jq -r ".forks[$i].subdir" forks.json)
             KIND=$(jq -r ".forks[$i].kind // \"llamacpp\"" forks.json)
+            NIGHTLY_ALWAYS=$(jq -r ".forks[$i].nightly_always // \"false\"" forks.json)
             ASSET_PREFIX=$(jq -r ".forks[$i].asset_prefix // \"llama.cpp-cuda-13.2\"" forks.json)
             FORK_CUDA=$(jq -r ".forks[$i].cuda_tag // empty" forks.json)
 
@@ -146,13 +147,18 @@ jobs:
               echo "Fork $NAME: stable ref=$STABLE_REF unchanged (last=$LAST_STABLE)"
             fi
 
-            if [ -n "$NIGHTLY_REF" ] && [ "$NIGHTLY_REF" = "$STABLE_REF" ]; then
+            if [ -n "$NIGHTLY_REF" ] && [ "$NIGHTLY_REF" = "$STABLE_REF" ] && [ "$NIGHTLY_ALWAYS" != "true" ]; then
               # The branch HEAD is still the commit the latest release points at,
               # so a nightly build would compile the exact same source as the
               # stable one: MODE reaches build-inside.sh only as the "mode:" line
               # of VERSION.txt, no cmake flag differs. The two tarballs differ by
               # 0.1 MB. Skipping is what keeps a nightly release meaning "a commit
               # that upstream has not released yet".
+              # Lanes with nightly_always=true (moving-tag lanes like basalt: the
+              # author retags v0.5.7 onto master HEAD, target_commitish=master)
+              # skip this dedup: their stable ref tracks HEAD live, so the dedup
+              # would keep the nightly lane permanently empty; their nightly is
+              # deduped against the last nightly build only, below.
               echo "Fork $NAME: nightly ref=$NIGHTLY_REF equals stable ref -> skipping nightly (nothing to add)"
             elif [ -n "$NIGHTLY_REF" ] && { [ "$FORCE" = "true" ] || [ "$NIGHTLY_REF" != "$LAST_NIGHTLY" ]; }; then
               echo "Fork $NAME: nightly ref=$NIGHTLY_REF -> changed"
